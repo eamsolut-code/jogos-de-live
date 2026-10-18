@@ -24,7 +24,7 @@ document.head.appendChild(st);
 function hash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); }
 function rand(a, b) { return a + Math.random() * (b - a); }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-function clamp(v, a, b) { return Math.max(a, Math.max(b, v)); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function tierOf(coins) { return coins >= 1000 ? 4 : coins >= 199 ? 3 : coins >= 30 ? 2 : coins >= 5 ? 1 : 0; }
 function txt(t, x, y, size, color = '#fff', align = 'center', stroke = true) {
   ctx.font = `800 ${size}px system-ui, "Segoe UI", sans-serif`; ctx.textAlign = align; ctx.textBaseline = 'middle';
