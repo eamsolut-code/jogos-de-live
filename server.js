@@ -39,7 +39,7 @@ function broadcast(hub, msg) {
 function startHub(hub) {
   const connect = () => {
     if (hub.stopped) return;
-    const conn = new TikTokLiveConnection(hub.user, { signApiKey: EULER_KEY, enableExtendedGiftInfo: true });
+    const conn = new TikTokLiveConnection(hub.user, { signApiKey: EULER_KEY, enableExtendedGiftInfo: false });
     hub.conn = conn;
 
     conn.on(WebcastEvent.CHAT, (d) => broadcast(hub, {
