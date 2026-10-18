@@ -14,7 +14,7 @@ function resize() {
 addEventListener('resize', resize); resize();
 const st = document.createElement('style');
 st.textContent = `html,body{margin:0;height:100%;background:#0b0a1a;overflow:hidden;touch-action:manipulation}
-canvas{display:block;width:100vw;height:100vh}
+canvas{display:block;width:100vw;height:100vh;height:100dvh}
 #demo{position:fixed;left:8px;bottom:8px;display:flex;gap:6px;flex-wrap:wrap;z-index:5;font:12px system-ui,sans-serif;max-width:70vw}
 #demo button{background:#ffffff22;color:#fff;border:1px solid #ffffff55;border-radius:8px;padding:8px 10px;font:inherit}
 #demo button:active{background:#ffffff55}`;
@@ -84,7 +84,10 @@ function endFrame() {
     ctx.globalAlpha = 1;
   });
   if (FX.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${FX.flash * 0.6})`; ctx.fillRect(0, 0, W, H); }
-  txt(connState, W - 10, H - 12, 12, '#ffffffaa', 'right', false);
+  ctx.font = '700 15px system-ui, sans-serif';
+  const tw = ctx.measureText(connState).width + 24, live = connState.startsWith('ao vivo');
+  rr(W / 2 - tw / 2, H - 92, tw, 28, 14); ctx.fillStyle = live ? '#0a7a3aee' : '#000000bb'; ctx.fill();
+  txt(connState, W / 2, H - 78, 15, '#fff', 'center', false);
 }
 
 // ---------- frutas humanoides ----------
