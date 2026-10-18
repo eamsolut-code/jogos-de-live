@@ -21,6 +21,10 @@ const EULER_KEY = process.env.EULER_API_KEY || undefined;
 const ALLOWED = (process.env.ALLOWED_USERS || '').split(',').map(clean).filter(Boolean);
 const IDLE_CLOSE_MS = 60000;
 
+// A biblioteca entrega campos com nomes diferentes conforme a versão; aceitamos os dois formatos.
+const uidOf = (u) => String(u?.displayId || u?.uniqueId || u?.id || 'anon');
+const nickOf = (u) => String(u?.nickname || u?.displayId || u?.uniqueId || 'anon');
+
 function clean(u) { return String(u || '').replace(/^@/, '').trim().toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 40); }
 
 const app = express();
@@ -42,28 +46,27 @@ function startHub(hub) {
     const conn = new TikTokLiveConnection(hub.user, { signApiKey: EULER_KEY, enableExtendedGiftInfo: false });
     hub.conn = conn;
 
-    conn.on(WebcastEvent.CHAT, (d) => broadcast(hub, {
-      t: 'chat', user: d.user?.uniqueId || 'anon', nick: d.user?.nickname || d.user?.uniqueId || 'anon', text: d.comment || '',
-    }));
-    conn.on(WebcastEvent.GIFT, (d) => {
-      // Presentes em sequência: só conta quando a sequência termina.
-      if (d.giftDetails?.giftType === 1 && !d.repeatEnd) return;
-      const unit = d.giftDetails?.diamondCount ?? d.extendedGiftInfo?.diamond_count ?? 1, count = d.repeatCount || 1;
-      broadcast(hub, {
-        t: 'gift', user: d.user?.uniqueId || 'anon', nick: d.user?.nickname || d.user?.uniqueId || 'anon',
-        name: d.giftDetails?.giftName || d.extendedGiftInfo?.name || 'Presente', coins: unit * count, count,
-      });
-    });
-    conn.on(WebcastEvent.LIKE, (d) => broadcast(hub, { t: 'like', user: d.user?.uniqueId || 'anon', nick: d.user?.nickname || 'anon', count: d.likeCount || 1 }));
     conn.on(ControlEvent.ERROR, ({ info }) => console.log(`[@${hub.user}] erro: ${info || ''}`));
     // Diagnóstico: conta os tipos de evento que chegam do TikTok e mostra a cada 15 s.
     hub.counts = {};
     conn.on(ControlEvent.DECODED_DATA, (event) => { hub.counts[event] = (hub.counts[event] || 0) + 1; });
+
     conn.on(WebcastEvent.CHAT, (d) => {
-      let raw = ''; try { raw = JSON.stringify(d, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)).slice(0, 700); } catch (e) { raw = 'nao-serializavel'; }
-      console.log(`[@${hub.user}] CHAT chaves=${Object.keys(d || {}).join(',')} bruto=${raw}`);
+      const text = String(d.content ?? d.comment ?? '');
+      if (!text) return;
+      console.log(`[@${hub.user}] comentário de ${uidOf(d.user)}: ${text.slice(0, 40)}`);
+      broadcast(hub, { t: 'chat', user: uidOf(d.user), nick: nickOf(d.user), text });
     });
-    conn.on(WebcastEvent.GIFT, (d) => console.log(`[@${hub.user}] presente de ${d.user?.uniqueId}: ${d.giftDetails?.giftName || d.giftId} x${d.repeatCount || 1}`));
+    conn.on(WebcastEvent.GIFT, (d) => {
+      // Presentes em sequência: só conta quando a sequência termina.
+      const type = d.gift?.type ?? d.giftDetails?.giftType;
+      if (type === 1 && !d.repeatEnd) return;
+      const unit = d.gift?.diamondCount ?? d.giftDetails?.diamondCount ?? 1, count = d.repeatCount || 1;
+      const name = d.gift?.name || d.giftDetails?.giftName || 'Presente';
+      console.log(`[@${hub.user}] presente de ${uidOf(d.user)}: ${name} x${count} (${unit * count} moedas)`);
+      broadcast(hub, { t: 'gift', user: uidOf(d.user), nick: nickOf(d.user), name, coins: unit * count, count });
+    });
+    conn.on(WebcastEvent.LIKE, (d) => broadcast(hub, { t: 'like', user: uidOf(d.user), nick: nickOf(d.user), count: d.likeCount || d.count || 1 }));
 
     let handled = false;
     const reconnect = (why) => {
