@@ -59,7 +59,10 @@ function startHub(hub) {
     // Diagnóstico: conta os tipos de evento que chegam do TikTok e mostra a cada 15 s.
     hub.counts = {};
     conn.on(ControlEvent.DECODED_DATA, (event) => { hub.counts[event] = (hub.counts[event] || 0) + 1; });
-    conn.on(WebcastEvent.CHAT, (d) => console.log(`[@${hub.user}] comentário de ${d.user?.uniqueId}: ${String(d.comment || '').slice(0, 40)}`));
+    conn.on(WebcastEvent.CHAT, (d) => {
+      let raw = ''; try { raw = JSON.stringify(d, (_k, v) => (typeof v === 'bigint' ? v.toString() : v)).slice(0, 700); } catch (e) { raw = 'nao-serializavel'; }
+      console.log(`[@${hub.user}] CHAT chaves=${Object.keys(d || {}).join(',')} bruto=${raw}`);
+    });
     conn.on(WebcastEvent.GIFT, (d) => console.log(`[@${hub.user}] presente de ${d.user?.uniqueId}: ${d.giftDetails?.giftName || d.giftId} x${d.repeatCount || 1}`));
 
     let handled = false;
