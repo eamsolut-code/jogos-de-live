@@ -56,6 +56,11 @@ function startHub(hub) {
     });
     conn.on(WebcastEvent.LIKE, (d) => broadcast(hub, { t: 'like', user: d.user?.uniqueId || 'anon', nick: d.user?.nickname || 'anon', count: d.likeCount || 1 }));
     conn.on(ControlEvent.ERROR, ({ info }) => console.log(`[@${hub.user}] erro: ${info || ''}`));
+    // Diagnóstico: conta os tipos de evento que chegam do TikTok e mostra a cada 15 s.
+    hub.counts = {};
+    conn.on(ControlEvent.DECODED_DATA, (event) => { hub.counts[event] = (hub.counts[event] || 0) + 1; });
+    conn.on(WebcastEvent.CHAT, (d) => console.log(`[@${hub.user}] comentário de ${d.user?.uniqueId}: ${String(d.comment || '').slice(0, 40)}`));
+    conn.on(WebcastEvent.GIFT, (d) => console.log(`[@${hub.user}] presente de ${d.user?.uniqueId}: ${d.giftDetails?.giftName || d.giftId} x${d.repeatCount || 1}`));
 
     let handled = false;
     const reconnect = (why) => {
@@ -77,6 +82,14 @@ function startHub(hub) {
   };
   connect();
 }
+
+setInterval(() => {
+  for (const hub of hubs.values()) {
+    if (!hub.connected) continue;
+    const keys = Object.keys(hub.counts || {});
+    console.log(`[@${hub.user}] eventos recebidos do TikTok: ${keys.length ? keys.map((k) => k + '=' + hub.counts[k]).join(', ') : 'nenhum'} | telas abertas: ${hub.clients.size}`);
+  }
+}, 15000);
 
 function stopHub(hub) {
   hub.stopped = true; clearTimeout(hub.timer);
