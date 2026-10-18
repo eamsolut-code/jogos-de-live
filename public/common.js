@@ -8,7 +8,7 @@ let scale = 1, offX = 0, offY = 0;
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
-  scale = Math.min(cv.width / W, cv.height / H);
+  scale = Math.max(cv.width / W, cv.height / H);
   offX = (cv.width - W * scale) / 2; offY = (cv.height - H * scale) / 2;
 }
 addEventListener('resize', resize); resize();
