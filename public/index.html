@@ -24,9 +24,13 @@
   <a class="card" data-p="torres.html"><b>Torre Rival</b><span>Dois times, duas torres. Digite 1 ou 2 e veja a sua crescer. Presente derruba a rival.</span></a>
   <a class="card" data-p="escalada.html"><b>Escalada Maluca</b><span>Metade do chat ajuda o abacaxi a subir, a outra metade derruba.</span></a>
 </div>
-<p class="demo">Quer testar sem live? Adicione <a id="d" href="?demo=1">?demo=1</a> no endereço (aparecem botões que simulam comentários e presentes).</p>
+<p class="demo">Dica: dentro do jogo, <b>toque uma vez na tela</b> para entrar em tela cheia. Quer testar sem live? Adicione <a id="d" href="?demo=1">?demo=1</a> no endereço (aparecem botões que simulam comentários e presentes).</p>
 <script>
-  const q = location.search;
-  document.querySelectorAll('a.card').forEach((a) => { a.href = a.dataset.p + q; });
+  const sp = new URLSearchParams(location.search);
+  try { if (sp.get('user')) localStorage.setItem('jogosUser', sp.get('user')); } catch (e) {}
+  let user = sp.get('user'); try { user = user || localStorage.getItem('jogosUser'); } catch (e) {}
+  const q = new URLSearchParams(); if (user) q.set('user', user); if (sp.has('demo')) q.set('demo', '1');
+  const qs = q.toString() ? '?' + q.toString() : '';
+  document.querySelectorAll('a.card').forEach((a) => { a.href = a.dataset.p + qs; });
 </script>
 </body></html>

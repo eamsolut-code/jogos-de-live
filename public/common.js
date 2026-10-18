@@ -4,6 +4,16 @@ const cv = document.getElementById('c');
 const ctx = cv.getContext('2d');
 const params = new URLSearchParams(location.search);
 const DEMO = params.has('demo');
+try { if (params.get('user')) localStorage.setItem('jogosUser', params.get('user')); } catch (e) {}
+const LIVE_USER = params.get('user') || (() => { try { return localStorage.getItem('jogosUser') || ''; } catch (e) { return ''; } })();
+
+// Tela cheia: um toque esconde a barra do navegador (fica só o jogo na live).
+let fsTried = false;
+addEventListener('click', () => {
+  if (fsTried || params.has('semtelacheia')) return;
+  fsTried = true;
+  try { const el = document.documentElement; (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); } catch (e) {}
+});
 let scale = 1, offX = 0, offY = 0;
 function resize() {
   const dpr = window.devicePixelRatio || 1;
@@ -32,6 +42,17 @@ function txt(t, x, y, size, color = '#fff', align = 'center', stroke = true) {
   ctx.fillStyle = color; ctx.fillText(t, x, y);
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
+
+
+// Toque em qualquer lugar entra em tela cheia (some a barra do navegador na live).
+function goFullscreen() {
+  try {
+    const el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen) el.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    else if (!document.fullscreenElement && el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch (e) {}
+}
+addEventListener('pointerdown', goFullscreen);
 
 // ---------- som ----------
 let ac = null;
@@ -88,6 +109,7 @@ function endFrame() {
   const tw = ctx.measureText(connState).width + 24, live = connState.startsWith('ao vivo');
   rr(W / 2 - tw / 2, H - 92, tw, 28, 14); ctx.fillStyle = live ? '#0a7a3aee' : '#000000bb'; ctx.fill();
   txt(connState, W / 2, H - 78, 15, '#fff', 'center', false);
+  if (!document.fullscreenElement && !document.webkitFullscreenElement) txt('Toque na tela para ficar em tela cheia', W / 2, H - 46, 14, '#ffe14d', 'center', false);
 }
 
 // ---------- frutas humanoides ----------
@@ -161,7 +183,7 @@ function startLive(o) {
 }
 function connectWS(o) {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const u = params.get('user');
+  const u = LIVE_USER;
   const ws = new WebSocket(`${proto}://${location.host}/ws${u ? '?user=' + encodeURIComponent(u) : ''}`);
   ws.onmessage = (ev) => {
     let m; try { m = JSON.parse(ev.data); } catch { return; }
