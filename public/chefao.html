@@ -154,16 +154,16 @@ function draw() {
   endFrame();
   // HUD
   txt(`CHEFÃO ${boss.n}: ${boss.name.toUpperCase()}`, W / 2, 56, 28);
-  rr(30, 82, W - 60, 34, 17); ctx.fillStyle = '#000a'; ctx.fill();
+  rr(VL, 82, VR - VL, 34, 17); ctx.fillStyle = '#000a'; ctx.fill();
   const pct = Math.max(0, boss.hp / boss.max);
-  rr(34, 86, Math.max(0, (W - 68) * pct), 26, 13); ctx.fillStyle = pct > 0.5 ? '#4ddc6a' : pct > 0.2 ? '#ffc933' : '#ff4d4d'; ctx.fill();
+  rr(VL + 4, 86, Math.max(0, (VR - VL - 8) * pct), 26, 13); ctx.fillStyle = pct > 0.5 ? '#4ddc6a' : pct > 0.2 ? '#ffc933' : '#ff4d4d'; ctx.fill();
   txt(`${Math.max(0, Math.ceil(boss.hp))} / ${boss.max}`, W / 2, 99, 18);
   txt('COMENTE PARA ATACAR  ·  PRESENTE = SUPER GOLPE', W / 2, 140, 17, '#ffe14d');
   const top = [...dmgByUser.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
   if (top.length) {
-    rr(14, 160, 190, 34 + top.length * 26, 12); ctx.fillStyle = '#0008'; ctx.fill();
-    txt('MAIORES DANOS', 109, 176, 14, '#ffe14d', 'center', false);
-    top.forEach(([u, d], i) => txt(`${i + 1}. ${((totalDmg.get(u) || {}).nick || u).slice(0, 9)}  ${Math.round(d)}`, 26, 204 + i * 26, 16, '#fff', 'left', false));
+    rr(VL, 160, 190, 34 + top.length * 26, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('MAIORES DANOS', VL + 95, 176, 14, '#ffe14d', 'center', false);
+    top.forEach(([u, d], i) => txt(`${i + 1}. ${((totalDmg.get(u) || {}).nick || u).slice(0, 9)}  ${Math.round(d)}`, VL + 12, 204 + i * 26, 16, '#fff', 'left', false));
   }
   if (victory) {
     ctx.fillStyle = '#000a'; ctx.fillRect(0, 0, W, H);

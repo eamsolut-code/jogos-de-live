@@ -143,9 +143,9 @@ function draw() {
   txt(`${alive} pipas no ar`, W / 2, 118, 16, '#fff');
   const top = list.filter((p) => p.cuts > 0).sort((a, b) => b.cuts - a.cuts).slice(0, 5);
   if (top.length) {
-    rr(14, 140, 180, 34 + top.length * 24, 12); ctx.fillStyle = '#0007'; ctx.fill();
-    txt('MAIS CORTES', 104, 156, 14, '#ffe14d', 'center', false);
-    top.forEach((p, i) => txt(`${i + 1}. ${p.nick.slice(0, 9)}  ${p.cuts}`, 26, 182 + i * 24, 15, '#fff', 'left', false));
+    rr(VL, 140, 180, 34 + top.length * 24, 12); ctx.fillStyle = '#0007'; ctx.fill();
+    txt('MAIS CORTES', VL + 90, 156, 14, '#ffe14d', 'center', false);
+    top.forEach((p, i) => txt(`${i + 1}. ${p.nick.slice(0, 9)}  ${p.cuts}`, VL + 12, 182 + i * 24, 15, '#fff', 'left', false));
   }
 }
 startLive({ onChat, onGift, onLike, demoTexts: ['solta', 'vai', 'pipa', 'bora'] });

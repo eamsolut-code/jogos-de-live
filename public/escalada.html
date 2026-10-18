@@ -109,9 +109,9 @@ function draw() {
   txt('ESCALADA MALUCA', W / 2, 44, 32);
   txt(`MONTANHA ${level} · ALTURA ${Math.round(q * 100)}%`, W / 2, 76, 16, '#fff');
   txt('digite 1 / "sobe" para AJUDAR  ·  digite 2 / "cai" para DERRUBAR', W / 2, 104, 13, '#fff6b0');
-  rr(40, 120, W - 80, 14, 7); ctx.fillStyle = '#0007'; ctx.fill();
-  rr(40, 120, Math.max(0, (W - 80) * q), 14, 7); ctx.fillStyle = '#ffe14d'; ctx.fill();
-  drawTop(score[0], 14, 'MAIS AJUDAM', teams[0].color); drawTop(score[1], W - 204, 'MAIS DERRUBAM', teams[1].color);
+  rr(VL, 120, VR - VL, 14, 7); ctx.fillStyle = '#0007'; ctx.fill();
+  rr(VL, 120, Math.max(0, (VR - VL) * q), 14, 7); ctx.fillStyle = '#ffe14d'; ctx.fill();
+  drawTop(score[0], VL, 'MAIS AJUDAM', teams[0].color); drawTop(score[1], VR - 190, 'MAIS DERRUBAM', teams[1].color);
   if (pauseMsg) { ctx.fillStyle = '#0008'; ctx.fillRect(0, 380, W, 160); txt(pauseMsg.text, W / 2, 440, 42, pauseMsg.color); txt(pauseMsg.sub, W / 2, 495, 20); }
 }
 startLive({ onChat, onGift, onLike, demoTexts: ['1', '2', 'sobe', 'cai', 'vai', 'forca', 'bora'] });

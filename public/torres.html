@@ -107,11 +107,11 @@ function draw() {
   txt('TORRE RIVAL', W / 2, 44, 32);
   txt(`RODADA ${round} · META ${goal()} PONTOS`, W / 2, 76, 15, '#fff6b0');
   teams.forEach((t, i) => {
-    const x = i === 0 ? 135 : 405;
-    rr(x - 120, 100, 240, 100, 14); ctx.fillStyle = '#0008'; ctx.fill();
+    const x = i === 0 ? VL + 104 : VR - 104;
+    rr(x - 104, 100, 208, 100, 14); ctx.fillStyle = '#0008'; ctx.fill();
     txt(t.name, x, 124, 22, t.color);
     txt(`${Math.round(Math.max(0, t.pts))} pts`, x, 154, 26);
-    txt(`digite ${t.key} para entrar · ${t.wins} vitória(s)`, x, 184, 12, '#ffffffcc', 'center', false);
+    txt(`digite ${t.key} · ${t.wins} vitória(s)`, x, 184, 12, '#ffffffcc', 'center', false);
   });
   if (winner !== null) {
     ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, W, H);

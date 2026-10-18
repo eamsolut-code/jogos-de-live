@@ -96,15 +96,15 @@ function draw() {
   txt('COMENTE PARA CORRER  ·  PRESENTE = TURBO, BANANA, FOGUETE', W / 2, 78, 14, '#fff6b0');
   const top = list.slice(0, 3);
   if (top.length) {
-    rr(14, 100, 175, 30 + top.length * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
-    txt('NA FRENTE', 101, 114, 13, '#ffe14d', 'center', false);
-    top.forEach((r, i) => txt(`${i + 1}. ${r.nick.slice(0, 9)}  ${Math.round(r.p * 100)}%`, 26, 140 + i * 24, 15, '#fff', 'left', false));
+    rr(VL, 100, 175, 30 + top.length * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('NA FRENTE', VL + 87, 114, 13, '#ffe14d', 'center', false);
+    top.forEach((r, i) => txt(`${i + 1}. ${r.nick.slice(0, 9)}  ${Math.round(r.p * 100)}%`, VL + 12, 140 + i * 24, 15, '#fff', 'left', false));
   }
   const w = [...wins.values()].sort((a, b) => b.n - a.n).slice(0, 3);
   if (w.length) {
-    rr(W - 189, 100, 175, 30 + w.length * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
-    txt('VITÓRIAS', W - 101, 114, 13, '#ffe14d', 'center', false);
-    w.forEach((x, i) => txt(`${x.nick.slice(0, 9)}  ${x.n}`, W - 177, 140 + i * 24, 15, '#fff', 'left', false));
+    rr(VR - 175, 100, 175, 30 + w.length * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('VITÓRIAS', VR - 87, 114, 13, '#ffe14d', 'center', false);
+    w.forEach((x, i) => txt(`${x.nick.slice(0, 9)}  ${x.n}`, VR - 163, 140 + i * 24, 15, '#fff', 'left', false));
   }
   if (winner) {
     ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, W, H);

@@ -15,11 +15,15 @@ addEventListener('click', () => {
   try { const el = document.documentElement; (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); } catch (e) {}
 });
 let scale = 1, offX = 0, offY = 0;
+// Parte visível do jogo (em unidades do jogo) quando a tela corta as laterais; usada pelos painéis.
+let VL = 8, VR = W - 8;
 function resize() {
   const dpr = window.devicePixelRatio || 1;
   cv.width = innerWidth * dpr; cv.height = innerHeight * dpr;
   scale = Math.max(cv.width / W, cv.height / H);
   offX = (cv.width - W * scale) / 2; offY = (cv.height - H * scale) / 2;
+  const cut = Math.max(0, (W - cv.width / scale) / 2);
+  VL = cut + 8; VR = W - cut - 8;
 }
 addEventListener('resize', resize); resize();
 const st = document.createElement('style');
@@ -37,7 +41,9 @@ function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function tierOf(coins) { return coins >= 1000 ? 4 : coins >= 199 ? 3 : coins >= 30 ? 2 : coins >= 5 ? 1 : 0; }
 function txt(t, x, y, size, color = '#fff', align = 'center', stroke = true) {
-  ctx.font = `800 ${size}px system-ui, "Segoe UI", sans-serif`; ctx.textAlign = align; ctx.textBaseline = 'middle';
+  ctx.font = `800 ${size}px system-ui, "Segoe UI", sans-serif`;
+  if (align === 'center') { const w = ctx.measureText(t).width, room = (Math.min(x - VL, VR - x)) * 2; if (w > room && room > 60) { size = Math.floor(size * room / w); ctx.font = `800 ${size}px system-ui, "Segoe UI", sans-serif`; } }
+  ctx.textAlign = align; ctx.textBaseline = 'middle';
   if (stroke) { ctx.lineWidth = Math.max(3, size / 6); ctx.strokeStyle = '#000b'; ctx.lineJoin = 'round'; ctx.strokeText(t, x, y); }
   ctx.fillStyle = color; ctx.fillText(t, x, y);
 }
