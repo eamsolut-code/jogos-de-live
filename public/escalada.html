@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Escalada Maluca</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  startQ: 0.3,              // altura inicial (0 a 1)
+  commentPush: 0.006,       // quanto cada comentário empurra
+  commentCooldownMs: 400,
+  giftPushByTier: [0.03, 0.06, 0.12, 0.25, 0.5],
+  gravityBase: 0.012,       // a montanha puxa o abacaxi pra baixo
+  gravityPerLevel: 0.004,   // fica mais difícil a cada subida
+  maxPerTeam: 18,
+  pauseSec: 4,
+};
+// ======================================
+const teams = [
+  { name: 'AJUDAM', key: '1', word: 'sobe', color: '#3ddc84' },
+  { name: 'DERRUBAM', key: '2', word: 'cai', color: '#ff5050' },
+];
+const members = new Map(), score = [new Map(), new Map()];
+let q = CONFIG.startQ, level = 1, pause = 0, pauseMsg = null, trend = 0, T = 0;
+
+function teamFromText(text) {
+  const t = (text || '').toLowerCase();
+  if (t.includes('sobe') || /(^|\D)1(\D|$)/.test(t)) return 0;
+  if (t.includes('cai') || /(^|\D)2(\D|$)/.test(t)) return 1;
+  return -1;
+}
+function getMember(user, nick, text) {
+  let m = members.get(user); const want = teamFromText(text);
+  const place = (team) => (team === 0 ? rand(30, 240) : rand(300, 510));
+  if (!m) {
+    const counts = [0, 0]; for (const x of members.values()) counts[x.team]++;
+    const team = want >= 0 ? want : counts[0] <= counts[1] ? 0 : 1;
+    if (counts[team] >= CONFIG.maxPerTeam) { let old = null; for (const x of members.values()) if (x.team === team && (!old || x.last < old.last)) old = x; if (old) members.delete(old.user); }
+    m = { user, nick, team, fruit: fruitFor(user), x: place(team), y: rand(810, 915), last: 0, cheer: 0, t: rand(0, 6) }; members.set(user, m);
+  } else if (want >= 0 && want !== m.team) { m.team = want; m.x = place(want); }
+  m.nick = nick || m.nick; return m;
+}
+function push(m, amount) {
+  if (pause > 0) return;
+  const dir = m.team === 0 ? 1 : -1;
+  q += dir * amount; trend = dir; m.cheer = 0.5;
+  const s = score[m.team], cur = s.get(m.user) || { nick: m.nick, v: 0 }; cur.v += amount * 1000; cur.nick = m.nick; s.set(m.user, cur);
+  if (q >= 1) { q = 1; level++; pause = CONFIG.pauseSec; pauseMsg = { text: 'CHEGOU NO TOPO!', sub: `Próxima montanha: nível ${level}`, color: '#ffe14d' }; burst(W / 2, 230, '#ffd24d', 90, 450); FX.flash = 0.8; FX.shake = 18; beep(500, 0.5, 'triangle', 0.07, 400); }
+  else if (q <= 0) fall();
+}
+function fall() { q = 0; pause = CONFIG.pauseSec - 1; pauseMsg = { text: 'DERRUBADO!', sub: 'O abacaxi caiu... de novo!', color: '#ff6b6b' }; FX.shake = 26; beep(180, 0.5, 'sawtooth', 0.07, -100); }
+function onChat({ user, nick, text }) {
+  const m = getMember(user, nick, text), now = performance.now();
+  if (now - m.last < CONFIG.commentCooldownMs) return;
+  m.last = now; push(m, CONFIG.commentPush);
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const m = getMember(user, nick, ''), tier = tierOf(coins), amt = CONFIG.giftPushByTier[tier];
+  addBanner(`${nick} mandou ${name}!`, m.team === 0 ? `empurrou pra CIMA (+${Math.round(amt * 100)}%)` : `puxou pra BAIXO (-${Math.round(amt * 100)}%)`, tier);
+  m.cheer = 1.2; FX.shake = 6 + tier * 4; burst(W / 2, climberPos().y, teams[m.team].color, 20 + tier * 8, 250); beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+  push(m, amt);
+}
+function climberPos() { return { x: W / 2 + Math.sin(q * 16) * 55, y: 790 - q * 560 }; }
+
+function update(dt) {
+  T += dt;
+  for (const m of members.values()) { m.t += dt; m.cheer = Math.max(0, m.cheer - dt); }
+  if (pause > 0) { pause -= dt; if (pause <= 0) { pauseMsg = null; q = CONFIG.startQ; trend = 0; } return; }
+  q -= (CONFIG.gravityBase + (level - 1) * CONFIG.gravityPerLevel) * dt; trend = trend * 0.98;
+  if (q <= 0) fall();
+}
+
+function drawTop(list, x, title, color) {
+  const top = [...list.values()].sort((a, b) => b.v - a.v).slice(0, 3);
+  rr(x, 150, 190, 34 + Math.max(1, top.length) * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
+  txt(title, x + 95, 166, 14, color, 'center', false);
+  top.forEach((e, i) => txt(`${i + 1}. ${e.nick.slice(0, 9)}  ${Math.round(e.v)}`, x + 12, 192 + i * 24, 15, '#fff', 'left', false));
+}
+
+function draw() {
+  beginFrame();
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#ff9ecb'); g.addColorStop(0.45, '#ffc785'); g.addColorStop(1, '#7a4fa8');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.fillStyle = '#ffffffbb'; for (let i = 0; i < 4; i++) { const cx = ((i * 200 + T * 10) % (W + 200)) - 100, cy = 260 + i * 110; ctx.beginPath(); ctx.ellipse(cx, cy, 55, 16, 0, 0, 7); ctx.ellipse(cx + 28, cy - 10, 32, 16, 0, 0, 7); ctx.fill(); }
+  // montanha
+  ctx.fillStyle = '#6b5a8e'; ctx.beginPath(); ctx.moveTo(-20, 930); ctx.lineTo(110, 560); ctx.lineTo(200, 450); ctx.lineTo(270, 215); ctx.lineTo(345, 450); ctx.lineTo(440, 560); ctx.lineTo(560, 930); ctx.fill();
+  ctx.fillStyle = '#85739f'; ctx.beginPath(); ctx.moveTo(270, 215); ctx.lineTo(345, 450); ctx.lineTo(440, 560); ctx.lineTo(560, 930); ctx.lineTo(300, 930); ctx.lineTo(300, 520); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(270, 215); ctx.lineTo(236, 320); ctx.lineTo(262, 305); ctx.lineTo(285, 330); ctx.lineTo(310, 315); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 2; for (let i = 1; i < 10; i++) { const y = 790 - i * 56; ctx.beginPath(); ctx.moveTo(W / 2 - 90, y); ctx.lineTo(W / 2 + 90, y); ctx.stroke(); }
+  // bandeira
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(270, 215); ctx.lineTo(270, 160); ctx.stroke();
+  ctx.fillStyle = '#ffe14d'; ctx.beginPath(); ctx.moveTo(270, 160); ctx.lineTo(310, 172 + Math.sin(T * 5) * 3); ctx.lineTo(270, 184); ctx.fill();
+  // chão
+  ctx.fillStyle = '#3d2a63'; ctx.fillRect(-20, 800, W + 40, H);
+  // escalador
+  const c = climberPos(), falling = trend < 0 || pauseMsg && pauseMsg.color === '#ff6b6b';
+  const fa = pauseMsg && pauseMsg.color === '#ff6b6b' ? pause : 0;
+  ctx.fillStyle = '#0004'; ctx.beginPath(); ctx.ellipse(c.x, c.y + 62, 34, 9, 0, 0, 7); ctx.fill();
+  drawFruit(c.x, c.y + fa * 60, FRUITS[6], { s: 1.9, t: T, arm: trend > 0 || (pauseMsg && pauseMsg.color === '#ffe14d'), sad: falling, open: falling, bob: Math.sin(T * 6) * 2, look: trend });
+  [...members.values()].sort((a, b) => a.y - b.y).forEach((m) => {
+    ctx.fillStyle = teams[m.team].color; ctx.fillRect(m.x - 10, m.y + 30, 20, 3);
+    drawFruit(m.x, m.y, m.fruit, { s: 0.6, t: m.t, arm: m.cheer > 0, look: m.team === 0 ? -1 : 1, bob: Math.sin(m.t * 3), sad: false });
+    txt(m.nick.slice(0, 8), m.x, m.y + 40, 9, '#fff');
+  });
+  endFrame();
+
+  txt('ESCALADA MALUCA', W / 2, 44, 32);
+  txt(`MONTANHA ${level} · ALTURA ${Math.round(q * 100)}%`, W / 2, 76, 16, '#fff');
+  txt('digite 1 / "sobe" para AJUDAR  ·  digite 2 / "cai" para DERRUBAR', W / 2, 104, 13, '#fff6b0');
+  rr(40, 120, W - 80, 14, 7); ctx.fillStyle = '#0007'; ctx.fill();
+  rr(40, 120, Math.max(0, (W - 80) * q), 14, 7); ctx.fillStyle = '#ffe14d'; ctx.fill();
+  drawTop(score[0], 14, 'MAIS AJUDAM', teams[0].color); drawTop(score[1], W - 204, 'MAIS DERRUBAM', teams[1].color);
+  if (pauseMsg) { ctx.fillStyle = '#0008'; ctx.fillRect(0, 380, W, 160); txt(pauseMsg.text, W / 2, 440, 42, pauseMsg.color); txt(pauseMsg.sub, W / 2, 495, 20); }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['1', '2', 'sobe', 'cai', 'vai', 'forca', 'bora'] });
+runGame(update, draw);
+</script></body></html>

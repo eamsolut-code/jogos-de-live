@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Pipa Combate</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  cols: 10, rows: 3,            // vagas de jogadores = cols x rows
+  commentCooldownMs: 700,
+  relaunchAfterSec: 1.5,        // tempo até poder soltar outra pipa depois de cortada
+  collisionRadius: 28,
+  cutsByTier: [1, 3, 7, 15, 99],        // quantas pipas cada faixa de presente corta
+  shieldByTier: [0, 0, 6, 12, 20],      // segundos de escudo por faixa de presente
+};
+// ======================================
+const players = new Map(), slots = new Array(CONFIG.cols * CONFIG.rows).fill(null), slashes = [];
+function slotPos(i) { const c = i % CONFIG.cols, r = Math.floor(i / CONFIG.cols); return { x: 30 + c * 53, y: 800 + r * 52 }; }
+
+function getPlayer(user, nick) {
+  let p = players.get(user);
+  if (!p) {
+    let si = slots.indexOf(null);
+    if (si < 0) {
+      let old = null; for (const q of players.values()) if (!old || q.last < old.last) old = q;
+      si = old.slot; players.delete(old.user);
+    }
+    const pos = slotPos(si);
+    p = { user, nick, fruit: fruitFor(user), slot: si, gx: pos.x, gy: pos.y, color: `hsl(${hash(user) % 360} 85% 58%)`, flying: false, cut: false, out: 0,
+      kx: pos.x, ky: pos.y - 20, kvx: 0, kvy: 0, bx: 0, by: 0, ph: rand(0, 6), t: rand(0, 6), energy: 1, shield: 0, cuts: 0, last: 0, hitCd: 0, rot: 0, cheer: 0 };
+    slots[si] = user; players.set(user, p);
+  }
+  p.nick = nick || p.nick; return p;
+}
+function launch(p) {
+  p.flying = true; p.cut = false; p.out = 0; p.rot = 0;
+  p.bx = clamp(p.gx + rand(-50, 50), 40, W - 40); p.by = rand(170, 520);
+  p.kx = p.gx; p.ky = p.gy - 25;
+}
+function cut(victim, attacker) {
+  if (!victim.flying || victim.cut) return;
+  victim.cut = true; victim.out = 0; victim.kvx = rand(-70, 70); victim.kvy = -140;
+  if (attacker) {
+    attacker.cuts++; attacker.cheer = 1.2;
+    slashes.push({ x1: attacker.kx, y1: attacker.ky, x2: victim.kx, y2: victim.ky, life: 0.3, color: attacker.color });
+    floatText(victim.kx, victim.ky - 20, 'CORTOU!', '#ffe14d', 20, 0.8);
+  }
+  burst(victim.kx, victim.ky, victim.color, 14, 180); beep(260, 0.15, 'sawtooth', 0.04, -120);
+}
+
+function onChat({ user, nick }) {
+  const p = getPlayer(user, nick), now = performance.now();
+  if (now - p.last < CONFIG.commentCooldownMs) return;
+  p.last = now;
+  if (!p.flying || (p.cut && p.out > CONFIG.relaunchAfterSec)) { launch(p); beep(600, 0.1, 'triangle', 0.04, 300); return; }
+  if (!p.cut) { p.energy = Math.min(10, p.energy + 1); p.cheer = 0.4; floatText(p.kx, p.ky - 26, '+', '#9dffb0', 18, 0.5); }
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const p = getPlayer(user, nick), tier = tierOf(coins);
+  if (!p.flying || p.cut) launch(p);
+  addBanner(`${nick} mandou ${name}!`, tier >= 4 ? 'CORTOU TODO MUNDO!' : `corta ${CONFIG.cutsByTier[tier]} pipa(s)${CONFIG.shieldByTier[tier] ? ' + escudo' : ''}`, tier);
+  p.shield = Math.max(p.shield, CONFIG.shieldByTier[tier]); p.cheer = 1.5; p.energy += 3;
+  const cand = [...players.values()].filter((q) => q !== p && q.flying && !q.cut && q.shield <= 0).sort(() => Math.random() - 0.5);
+  setTimeout(() => {
+    cand.slice(0, CONFIG.cutsByTier[tier]).forEach((q, i) => setTimeout(() => cut(q, p), i * 90));
+    FX.shake = 6 + tier * 5; if (tier >= 3) FX.flash = 0.6;
+  }, 300);
+  beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+}
+
+function update(dt) {
+  const list = [...players.values()];
+  for (const p of list) {
+    p.t += dt; p.energy = Math.max(1, p.energy - 0.4 * dt); p.shield = Math.max(0, p.shield - dt); p.hitCd = Math.max(0, p.hitCd - dt); p.cheer = Math.max(0, p.cheer - dt);
+    if (!p.flying) continue;
+    if (!p.cut) {
+      const tx = p.bx + Math.sin(p.t * 0.9 + p.ph) * 45, ty = p.by + Math.sin(p.t * 1.3 + p.ph * 2) * 35;
+      p.kx += (tx - p.kx) * 2 * dt; p.ky += (ty - p.ky) * 2 * dt; p.rot = (tx - p.kx) * 0.01;
+    } else {
+      p.out += dt; p.kvy += 420 * dt; p.kx += p.kvx * dt; p.ky += p.kvy * dt; p.rot += dt * 6;
+      if (p.ky > H + 60) p.flying = false;
+    }
+  }
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    if (!a.flying || !b.flying || a.cut || b.cut || a.hitCd > 0 || b.hitCd > 0) continue;
+    if (Math.hypot(a.kx - b.kx, a.ky - b.ky) < CONFIG.collisionRadius) {
+      a.hitCd = b.hitCd = 1.5;
+      if (a.shield > 0 && b.shield > 0) continue;
+      const loser = a.shield > 0 ? b : b.shield > 0 ? a : (a.energy === b.energy ? (Math.random() < 0.5 ? a : b) : (a.energy < b.energy ? a : b));
+      cut(loser, loser === a ? b : a);
+    }
+  }
+  for (let i = slashes.length - 1; i >= 0; i--) { slashes[i].life -= dt; if (slashes[i].life <= 0) slashes.splice(i, 1); }
+}
+
+function drawKite(p) {
+  ctx.save(); ctx.translate(p.kx, p.ky); ctx.rotate(p.rot);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, 24); for (let i = 1; i <= 5; i++) ctx.lineTo(Math.sin(p.t * 5 + i) * 6, 24 + i * 9); ctx.stroke();
+  ctx.fillStyle = p.color; ctx.beginPath(); ctx.moveTo(0, -24); ctx.lineTo(16, 0); ctx.lineTo(0, 26); ctx.lineTo(-16, 0); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#ffffff55'; ctx.beginPath(); ctx.moveTo(0, -24); ctx.lineTo(16, 0); ctx.lineTo(0, 0); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#0006'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -24); ctx.lineTo(0, 26); ctx.moveTo(-16, 0); ctx.lineTo(16, 0); ctx.stroke();
+  ctx.restore();
+  if (p.shield > 0) {
+    ctx.globalAlpha = 0.5 + Math.sin(p.t * 8) * 0.2; ctx.strokeStyle = '#7fe9ff'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(p.kx, p.ky, 30, 0, 7); ctx.stroke(); ctx.fillStyle = '#7fe9ff33'; ctx.fill(); ctx.globalAlpha = 1;
+  }
+}
+
+function draw() {
+  beginFrame();
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#2b7fd6'); g.addColorStop(0.55, '#8fd0ff'); g.addColorStop(0.8, '#ffd9a0'); g.addColorStop(1, '#ffb46b');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.fillStyle = '#ffffffcc';
+  for (let i = 0; i < 5; i++) { const cx = ((i * 190 + performance.now() * 0.008) % (W + 200)) - 100, cy = 200 + i * 90; ctx.beginPath(); ctx.ellipse(cx, cy, 60, 20, 0, 0, 7); ctx.ellipse(cx + 30, cy - 12, 36, 20, 0, 0, 7); ctx.ellipse(cx - 30, cy - 6, 30, 16, 0, 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#4fae5a'; ctx.beginPath(); ctx.moveTo(-20, 780); ctx.quadraticCurveTo(W * 0.3, 740, W * 0.6, 775); ctx.quadraticCurveTo(W * 0.85, 795, W + 20, 760); ctx.lineTo(W + 20, H + 20); ctx.lineTo(-20, H + 20); ctx.fill();
+  ctx.fillStyle = '#3b8f47'; ctx.fillRect(-20, 800, W + 40, H);
+
+  const list = [...players.values()];
+  for (const p of list) {   // linhas
+    if (!p.flying) continue;
+    ctx.strokeStyle = p.cut ? '#ffffff88' : '#ffffffcc'; ctx.lineWidth = 1.5; ctx.beginPath();
+    const sx = p.gx + 14, sy = p.gy - 18;
+    if (p.cut) { ctx.moveTo(sx, sy); ctx.quadraticCurveTo(sx + 6, sy + 22, sx - 2, sy + 40 + Math.sin(p.t * 6) * 6); }
+    else { ctx.moveTo(sx, sy); ctx.quadraticCurveTo((sx + p.kx) / 2, Math.max(sy, p.ky) + 40, p.kx, p.ky + 24); }
+    ctx.stroke();
+  }
+  list.sort((a, b) => a.gy - b.gy).forEach((p) => {
+    drawFruit(p.gx, p.gy, p.fruit, { s: 0.55, t: p.t, arm: p.flying && !p.cut || p.cheer > 0, sad: p.flying && p.cut, look: 0 });
+    txt(p.nick.slice(0, 8), p.gx, p.gy + 27, 10, '#fff');
+  });
+  for (const p of list) if (p.flying) drawKite(p);
+  for (const s of slashes) { ctx.globalAlpha = s.life / 0.3; ctx.strokeStyle = '#fff'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(s.x1, s.y1); ctx.lineTo(s.x2, s.y2); ctx.stroke(); ctx.globalAlpha = 1; }
+  endFrame();
+
+  txt('PIPA COMBATE', W / 2, 50, 34, '#fff');
+  txt('COMENTE PARA SOLTAR A PIPA  ·  PRESENTE CORTA AS OUTRAS', W / 2, 90, 15, '#fff6b0');
+  const alive = list.filter((p) => p.flying && !p.cut).length;
+  txt(`${alive} pipas no ar`, W / 2, 118, 16, '#fff');
+  const top = list.filter((p) => p.cuts > 0).sort((a, b) => b.cuts - a.cuts).slice(0, 5);
+  if (top.length) {
+    rr(14, 140, 180, 34 + top.length * 24, 12); ctx.fillStyle = '#0007'; ctx.fill();
+    txt('MAIS CORTES', 104, 156, 14, '#ffe14d', 'center', false);
+    top.forEach((p, i) => txt(`${i + 1}. ${p.nick.slice(0, 9)}  ${p.cuts}`, 26, 182 + i * 24, 15, '#fff', 'left', false));
+  }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['solta', 'vai', 'pipa', 'bora'] });
+runGame(update, draw);
+</script></body></html>

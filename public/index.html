@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jogos de Live</title>
+<style>
+  body { margin: 0; background: #14102b; color: #fff; font-family: system-ui, "Segoe UI", sans-serif; padding: 20px 16px 40px; }
+  h1 { text-align: center; margin: 8px 0 4px; font-size: 26px; }
+  p.sub { text-align: center; margin: 0 0 20px; color: #cfc8ff; font-size: 14px; }
+  .grid { display: grid; gap: 12px; max-width: 520px; margin: 0 auto; }
+  a.card { display: block; text-decoration: none; color: #fff; background: #2a2160; border: 2px solid #ffffff22; border-radius: 16px; padding: 16px; }
+  a.card:active { background: #3a2f85; }
+  a.card b { font-size: 20px; display: block; margin-bottom: 4px; }
+  a.card span { font-size: 14px; color: #d9d3ff; }
+  .demo { text-align: center; margin-top: 18px; font-size: 13px; color: #cfc8ff; }
+  .demo a { color: #ffe14d; }
+</style></head>
+<body>
+<h1>Jogos de Live</h1>
+<p class="sub">Abra um jogo, ponha a tela na live e o chat joga.</p>
+<div class="grid">
+  <a class="card" data-p="chefao.html"><b>Chefão Coletivo</b><span>O chat inteiro contra o chefão. Comentário ataca, presente é super golpe.</span></a>
+  <a class="card" data-p="pipa.html"><b>Pipa Combate</b><span>Cada comentário solta uma pipa. Presente corta as outras, escudo protege.</span></a>
+  <a class="card" data-p="corrida.html"><b>Corrida das Frutas</b><span>Comentário faz correr. Presente dá turbo, banana nos líderes e foguete.</span></a>
+  <a class="card" data-p="torres.html"><b>Torre Rival</b><span>Dois times, duas torres. Digite 1 ou 2 e veja a sua crescer. Presente derruba a rival.</span></a>
+  <a class="card" data-p="escalada.html"><b>Escalada Maluca</b><span>Metade do chat ajuda o abacaxi a subir, a outra metade derruba.</span></a>
+</div>
+<p class="demo">Quer testar sem live? Adicione <a id="d" href="?demo=1">?demo=1</a> no endereço (aparecem botões que simulam comentários e presentes).</p>
+<script>
+  const q = location.search;
+  document.querySelectorAll('a.card').forEach((a) => { a.href = a.dataset.p + q; });
+</script>
+</body></html>

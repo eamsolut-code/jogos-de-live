@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jogos-de-live
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      # Digite aqui o seu @ do TikTok (sem o @). Só ele poderá usar o servidor.
+      - key: ALLOWED_USERS
+        sync: false
+      # Opcional: chave do Euler Stream (deixa a conexão mais estável na nuvem).
+      - key: EULER_API_KEY
+        sync: false

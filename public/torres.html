@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Torre Rival</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  goalBase: 150,            // pontos para vencer a 1ª rodada
+  goalGrowth: 1.35,         // a meta cresce a cada rodada
+  commentPts: 1, commentCooldownMs: 500,
+  giftPtsPerCoin: 1.5,
+  sabotageByTier: [0, 0, 0.10, 0.25, 0.50],   // % da torre rival derrubada por faixa de presente
+  maxPerTeam: 16,
+  restartAfterSec: 6,
+};
+// ======================================
+const teams = [
+  { name: 'TIME VERDE', key: '1', color: '#3ddc84', dark: '#1f8f56', pts: 0, disp: 0, wins: 0, x: 135 },
+  { name: 'TIME ROSA',  key: '2', color: '#ff5fa2', dark: '#b82f68', pts: 0, disp: 0, wins: 0, x: 405 },
+];
+const members = new Map(); let round = 1, winner = null, endT = 0;
+const goal = () => Math.round(CONFIG.goalBase * Math.pow(CONFIG.goalGrowth, round - 1));
+
+function teamFromText(text) {
+  const t = (text || '').toLowerCase();
+  if (t.includes('verde') || /(^|\D)1(\D|$)/.test(t)) return 0;
+  if (t.includes('rosa') || /(^|\D)2(\D|$)/.test(t)) return 1;
+  return -1;
+}
+function getMember(user, nick, text) {
+  let m = members.get(user); const want = teamFromText(text);
+  if (!m) {
+    const counts = [0, 0]; for (const q of members.values()) counts[q.team]++;
+    const team = want >= 0 ? want : counts[0] === counts[1] ? Math.floor(Math.random() * 2) : counts[0] < counts[1] ? 0 : 1;
+    if (counts[team] >= CONFIG.maxPerTeam) { let old = null; for (const q of members.values()) if (q.team === team && (!old || q.last < old.last)) old = q; if (old) members.delete(old.user); }
+    m = { user, nick, team, fruit: fruitFor(user), x: 0, y: rand(800, 915), last: 0, cheer: 0, t: rand(0, 6) };
+    m.x = team === 0 ? rand(30, 240) : rand(300, 510); members.set(user, m);
+  } else if (want >= 0 && want !== m.team) { m.team = want; m.x = want === 0 ? rand(30, 240) : rand(300, 510); }
+  m.nick = nick || m.nick; return m;
+}
+function addPts(ti, pts, m) {
+  if (winner) return;
+  teams[ti].pts += pts;
+  if (m) m.cheer = 0.5;
+  if (teams[ti].pts >= goal()) finish(ti);
+}
+function finish(ti) {
+  winner = ti; endT = CONFIG.restartAfterSec; teams[ti].wins++;
+  burst(teams[ti].x, 260, teams[ti].color, 90, 450); FX.flash = 0.8; FX.shake = 20; beep(500, 0.5, 'triangle', 0.07, 400);
+}
+function onChat({ user, nick, text }) {
+  const m = getMember(user, nick, text), now = performance.now();
+  if (now - m.last < CONFIG.commentCooldownMs) return;
+  m.last = now; addPts(m.team, CONFIG.commentPts, m); beep(480 + m.team * 90, 0.04, 'square', 0.02);
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const m = getMember(user, nick, ''), tier = tierOf(coins), pts = Math.round(coins * CONFIG.giftPtsPerCoin);
+  const foe = teams[1 - m.team], pct = CONFIG.sabotageByTier[tier], lost = Math.round(foe.pts * pct);
+  addBanner(`${nick} mandou ${name}!`, `+${pts} pontos${lost ? ` e derrubou ${lost} do rival!` : ''}`, tier);
+  if (lost) { foe.pts -= lost; floatText(foe.x, 420, `-${lost}`, '#ff4d4d', 40, 1.2); FX.shake = 12 + tier * 4; burst(foe.x, 500, foe.color, 30, 260); }
+  addPts(m.team, pts, m); m.cheer = 1.2; beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+}
+
+function update(dt) {
+  for (const t of teams) t.disp += (t.pts - t.disp) * Math.min(1, 5 * dt);
+  for (const m of members.values()) { m.t += dt; m.cheer = Math.max(0, m.cheer - dt); }
+  if (winner !== null) { endT -= dt; if (endT <= 0) { winner = null; round++; teams.forEach((t) => { t.pts = 0; t.disp = 0; }); } }
+}
+
+function drawTower(t, ti) {
+  const base = 770, maxH = 520, wd = 130, left = t.x - wd / 2;
+  const h = Math.min(maxH, (Math.max(0, t.disp) / goal()) * maxH), bh = 20, n = Math.floor(h / bh);
+  const sway = Math.sin(performance.now() / 600 + ti) * Math.min(8, h / 60);
+  ctx.fillStyle = '#0005'; ctx.beginPath(); ctx.ellipse(t.x, base + 6, 90, 12, 0, 0, 7); ctx.fill();
+  for (let i = 0; i <= n; i++) {
+    const hh = i === n ? h - n * bh : bh; if (hh <= 0) continue;
+    const off = sway * (i / 26);
+    ctx.fillStyle = i % 2 ? t.color : t.dark; ctx.fillRect(left + off, base - (i + 1) * bh + (bh - hh), wd, hh);
+    ctx.fillStyle = '#ffffff30'; ctx.fillRect(left + off, base - (i + 1) * bh + (bh - hh), wd, 3);
+    if (hh === bh && i % 2 === 0) { ctx.fillStyle = '#ffffffaa'; ctx.fillRect(left + off + 22, base - (i + 1) * bh + 5, 14, 10); ctx.fillRect(left + off + wd - 36, base - (i + 1) * bh + 5, 14, 10); }
+  }
+  const topY = base - h, off = sway * (n / 26);
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(t.x + off, topY); ctx.lineTo(t.x + off, topY - 40); ctx.stroke();
+  ctx.fillStyle = t.color; ctx.beginPath(); ctx.moveTo(t.x + off, topY - 40); ctx.lineTo(t.x + off + 30, topY - 32 + Math.sin(performance.now() / 150) * 3); ctx.lineTo(t.x + off, topY - 22); ctx.fill();
+}
+
+function draw() {
+  beginFrame();
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#162a5c'); g.addColorStop(0.6, '#3b4a9c'); g.addColorStop(1, '#22164a');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.fillStyle = '#ffffff12'; for (let i = 0; i < 30; i++) { ctx.beginPath(); ctx.arc((i * 97) % W, (i * 53) % 700, 1.5 + (i % 3), 0, 7); ctx.fill(); }
+  ctx.fillStyle = '#1d1a3f'; ctx.fillRect(-20, 770, W + 40, H);
+  ctx.strokeStyle = '#ffe14d'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]); ctx.beginPath(); ctx.moveTo(10, 250); ctx.lineTo(W - 10, 250); ctx.stroke(); ctx.setLineDash([]);
+  txt('META', W / 2, 238, 14, '#ffe14d');
+  ctx.strokeStyle = '#ffffff30'; ctx.beginPath(); ctx.moveTo(W / 2, 270); ctx.lineTo(W / 2, 960); ctx.stroke();
+  teams.forEach(drawTower);
+  [...members.values()].sort((a, b) => a.y - b.y).forEach((m) => {
+    ctx.fillStyle = teams[m.team].color; ctx.fillRect(m.x - 10, m.y + 30, 20, 3);
+    drawFruit(m.x, m.y, m.fruit, { s: 0.6, t: m.t, arm: m.cheer > 0, look: m.team === 0 ? 1 : -1, bob: Math.sin(m.t * 3) });
+    txt(m.nick.slice(0, 8), m.x, m.y + 40, 9, '#fff');
+  });
+  endFrame();
+
+  txt('TORRE RIVAL', W / 2, 44, 32);
+  txt(`RODADA ${round} · META ${goal()} PONTOS`, W / 2, 76, 15, '#fff6b0');
+  teams.forEach((t, i) => {
+    const x = i === 0 ? 135 : 405;
+    rr(x - 120, 100, 240, 100, 14); ctx.fillStyle = '#0008'; ctx.fill();
+    txt(t.name, x, 124, 22, t.color);
+    txt(`${Math.round(Math.max(0, t.pts))} pts`, x, 154, 26);
+    txt(`digite ${t.key} para entrar · ${t.wins} vitória(s)`, x, 184, 12, '#ffffffcc', 'center', false);
+  });
+  if (winner !== null) {
+    ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, W, H);
+    txt(`${teams[winner].name} VENCEU!`, W / 2, 380, 42, teams[winner].color);
+    txt('A torre chegou na meta', W / 2, 440, 22);
+    txt(`Próxima rodada: meta ${Math.round(CONFIG.goalBase * Math.pow(CONFIG.goalGrowth, round))}`, W / 2, 500, 18, '#ffe14d');
+  }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['1', '2', 'verde', 'rosa', 'vai', 'bora', 'forca', 'vamos'] });
+runGame(update, draw);
+</script></body></html>
