@@ -53,7 +53,7 @@ function finish(ti) {
 function onChat({ user, nick, text }) {
   const m = getMember(user, nick, text), now = performance.now();
   if (now - m.last < CONFIG.commentCooldownMs) return;
-  m.last = now; addPts(m.team, CONFIG.commentPts, m); beep(480 + m.team * 90, 0.04, 'square', 0.02);
+  m.last = now; addPts(m.team, CONFIG.commentPts * audMul(), m); beep(480 + m.team * 90, 0.04, 'square', 0.02);
 }
 function onLike() {}
 function onGift({ user, nick, name, coins }) {

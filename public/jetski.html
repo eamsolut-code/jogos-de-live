@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Corrida de Jet-Ski</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  maxRacers: 40,
+  baseSpeed: 0.018,          // fração da pista por segundo (0.018 = ~55 s de prova)
+  commentBoost: 0.004,       // quanto cada comentário empurra
+  commentCooldownMs: 600,
+  turboSec: 3.5, turboMult: 3,
+  restartAfterSec: 7,
+};
+// ======================================
+const START_Y = 840, FINISH_Y = 200;
+const racers = new Map(); let race = 1, winner = null, endT = 0, wins = new Map();
+
+function getRacer(user, nick) {
+  let r = racers.get(user);
+  if (!r) {
+    if (racers.size >= CONFIG.maxRacers) { let old = null; for (const q of racers.values()) if (!old || q.last < old.last) old = q; racers.delete(old.user); }
+    r = { user, nick, robot: robotFor(user), p: 0, jit: hash(user + 'y') % 60, x: 40 + (hash(user) % (W - 80)), sp: CONFIG.baseSpeed * rand(0.85, 1.15), turbo: 0, stun: 0, last: 0, t: rand(0, 6) };
+    racers.set(user, r);
+  }
+  r.nick = nick || r.nick; return r;
+}
+const standings = () => [...racers.values()].sort((a, b) => b.p - a.p);
+
+function onChat({ user, nick }) {
+  const r = getRacer(user, nick), now = performance.now();
+  if (winner || now - r.last < CONFIG.commentCooldownMs) return;
+  r.last = now; if (r.stun <= 0) r.p += CONFIG.commentBoost * audMul();
+  floatText(r.x, yOf(r) - 40, '+', '#9dffb0', 16, 0.4);
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const r = getRacer(user, nick), tier = tierOf(coins);
+  if (winner) return;
+  addBanner(`${nick} mandou ${name}!`, ['TURBO!', 'ONDA NOS LÍDERES!', 'FOGUETE!', 'SUPER FOGUETE!', 'IMPOSSÍVEL!'][tier], tier);
+  const others = standings().filter((q) => q !== r);
+  if (tier === 0) r.turbo = CONFIG.turboSec;
+  else if (tier === 1) others.slice(0, 3).forEach((q) => { q.stun = 2.2; floatText(q.x, yOf(q) - 40, '🌊', '#fff', 30, 1); });
+  else if (tier === 2) { r.p += 0.2; r.turbo = CONFIG.turboSec; FX.shake = 10; }
+  else if (tier === 3) { r.p += 0.4; others.slice(0, 5).forEach((q) => { q.stun = 3; }); FX.shake = 16; FX.flash = 0.5; }
+  else { r.p = Math.max(r.p, 0.93); others.forEach((q) => { q.stun = 3.5; }); FX.shake = 24; FX.flash = 0.9; }
+  burst(r.x, yOf(r), '#ffd24d', 20, 260); beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+}
+function yOf(r) { return START_Y - r.jit * Math.max(0, 1 - r.p * 4) + (FINISH_Y - START_Y) * Math.min(1, r.p); }
+
+function update(dt) {
+  if (winner) {
+    endT -= dt;
+    if (endT <= 0) { winner = null; race += 1; for (const r of racers.values()) { r.p = 0; r.turbo = 0; r.stun = 0; } }
+    return;
+  }
+  for (const r of racers.values()) {
+    r.t += dt; r.stun = Math.max(0, r.stun - dt); r.turbo = Math.max(0, r.turbo - dt);
+    if (r.stun <= 0) r.p += r.sp * (r.turbo > 0 ? CONFIG.turboMult : 1) * dt;
+    if (r.p >= 1) {
+      const podium = standings().slice(0, 3);
+      winner = { r, podium: podium.map((q) => q.nick) }; endT = CONFIG.restartAfterSec;
+      wins.set(r.user, { nick: r.nick, n: ((wins.get(r.user) || {}).n || 0) + 1 });
+      burst(r.x, FINISH_Y, '#ffd24d', 80, 450); FX.flash = 0.8; FX.shake = 20; beep(500, 0.5, 'triangle', 0.07, 400);
+      break;
+    }
+  }
+}
+
+function draw() {
+  beginFrame();
+  const T = performance.now() / 1000;
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#0a6fb8'); g.addColorStop(1, '#0a3f7a');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.strokeStyle = '#ffffff22'; ctx.lineWidth = 3;
+  for (let i = 0; i < 16; i++) { const y = ((i * 70 + T * 60) % (H + 70)) - 35; ctx.beginPath(); for (let x = -10; x <= W + 10; x += 20) ctx.lineTo(x, y + Math.sin(x * 0.05 + T * 2 + i) * 6); ctx.stroke(); }
+  for (let i = 0; i < 6; i++) { const x = 20 + (W - 40) * (i + 0.5) / 6; ctx.fillStyle = i % 2 ? '#ff6a3a' : '#fff'; ctx.beginPath(); ctx.arc(x, START_Y + 50, 7, 0, 7); ctx.fill(); }
+  for (let i = 0; i < 24; i++) for (let j = 0; j < 2; j++) { ctx.fillStyle = (i + j) % 2 ? '#fff' : '#111'; ctx.fillRect(20 + i * ((W - 40) / 24), FINISH_Y - 20 + j * 14, (W - 40) / 24, 14); }
+  ctx.fillStyle = '#ff6a3a'; ctx.fillRect(14, FINISH_Y - 40, 8, 70); ctx.fillRect(W - 22, FINISH_Y - 40, 8, 70);
+  txt('CHEGADA', W / 2, FINISH_Y - 42, 18, '#fff');
+
+  const list = standings();
+  [...list].sort((a, b) => yOf(a) - yOf(b)).forEach((r) => {
+    const y = yOf(r);
+    ctx.strokeStyle = '#ffffff66'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(r.x - 4, y + 36); ctx.lineTo(r.x - 14 - Math.random() * 4, y + 90); ctx.moveTo(r.x + 4, y + 36); ctx.lineTo(r.x + 14 + Math.random() * 4, y + 90); ctx.stroke();
+    if (r.turbo > 0) { ctx.fillStyle = '#ffb02e88'; ctx.beginPath(); ctx.moveTo(r.x - 10, y + 40); ctx.lineTo(r.x, y + 84 + Math.random() * 14); ctx.lineTo(r.x + 10, y + 40); ctx.fill(); }
+    ctx.fillStyle = r.robot.dark; ctx.beginPath(); ctx.roundRect(r.x - 16, y + 18, 32, 22, 8); ctx.fill();
+    ctx.fillStyle = r.stun > 0 ? '#888' : '#ff6a3a'; ctx.beginPath(); ctx.moveTo(r.x - 16, y + 24); ctx.lineTo(r.x, y + 12); ctx.lineTo(r.x + 16, y + 24); ctx.lineTo(r.x + 12, y + 40); ctx.lineTo(r.x - 12, y + 40); ctx.fill();
+    drawRobot(r.x, y - 4, r.robot, { s: 0.62, t: r.t, arm: r.turbo > 0, stun: r.stun > 0, bob: Math.sin(r.t * 5) * 1.5 });
+    txt(r.nick.slice(0, 9), r.x, y + 40, 11, '#fff');
+  });
+  if (list[0] && !winner) { const r = list[0], y = yOf(r) - 36; ctx.fillStyle = '#ffd24d'; ctx.beginPath(); ctx.moveTo(r.x - 10, y); ctx.lineTo(r.x - 12, y - 12); ctx.lineTo(r.x - 5, y - 6); ctx.lineTo(r.x, y - 14); ctx.lineTo(r.x + 5, y - 6); ctx.lineTo(r.x + 12, y - 12); ctx.lineTo(r.x + 10, y); ctx.fill(); }
+  endFrame();
+
+  txt(`CORRIDA DE JET-SKI #${race}`, W / 2, 46, 28);
+  txt('COMENTE PARA ACELERAR  ·  PRESENTE = TURBO, ONDA, FOGUETE', W / 2, 78, 14, '#fff6b0');
+  const top = list.slice(0, 3);
+  if (top.length) {
+    rr(VL, 100, 175, 30 + top.length * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('NA FRENTE', VL + 87, 114, 13, '#ffe14d', 'center', false);
+    top.forEach((r, i) => txt(`${i + 1}. ${r.nick.slice(0, 9)}  ${Math.round(r.p * 100)}%`, VL + 12, 140 + i * 24, 15, '#fff', 'left', false));
+  }
+  const w = [...wins.values()].sort((a, b) => b.n - a.n).slice(0, 3);
+  if (w.length) {
+    rr(VR - 175, 100, 175, 30 + w.length * 24, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('VITÓRIAS', VR - 87, 114, 13, '#ffe14d', 'center', false);
+    w.forEach((x, i) => txt(`${x.nick.slice(0, 9)}  ${x.n}`, VR - 163, 140 + i * 24, 15, '#fff', 'left', false));
+  }
+  if (winner) {
+    ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, W, H);
+    txt('VENCEDOR!', W / 2, 300, 46, '#ffe14d');
+    drawRobot(W / 2, 400, winner.r.robot, { s: 2.6, t: performance.now() / 1000, arm: true });
+    txt(winner.r.nick, W / 2, 520, 34);
+    winner.podium.forEach((n, i) => txt(`${i + 1}º  ${n}`, W / 2, 590 + i * 40, 24));
+    txt('Próxima corrida já já...', W / 2, 760, 18, '#ffe14d');
+  }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['corre', 'vai', 'bora', 'vamos'] });
+runGame(update, draw);
+</script></body></html>

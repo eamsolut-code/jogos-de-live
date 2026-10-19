@@ -1,6 +1,6 @@
 # Jogos de Live (frutas humanoides)
 
-5 jogos em que o chat da sua live do TikTok joga: comentário entra no jogo e presente muda a partida.
+10 jogos (5 de frutas e 5 de robôs) em que o chat da sua live do TikTok joga: comentário entra no jogo e presente muda a partida.
 
 | Jogo | Arquivo | Como o chat joga |
 |---|---|---|
@@ -10,7 +10,7 @@
 | Torre Rival | torres.html | Digite 1 ou 2 (ou verde/rosa) para escolher o time. Presente derruba a torre rival |
 | Escalada Maluca | escalada.html | Digite 1/"sobe" para ajudar, 2/"cai" para derrubar o abacaxi |
 
-O endereço principal mostra um menu com os 5 jogos.
+O endereço principal mostra um menu com os 10 jogos.
 
 ---
 

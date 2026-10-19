@@ -53,7 +53,7 @@ function fall() { q = 0; pause = CONFIG.pauseSec - 1; pauseMsg = { text: 'DERRUB
 function onChat({ user, nick, text }) {
   const m = getMember(user, nick, text), now = performance.now();
   if (now - m.last < CONFIG.commentCooldownMs) return;
-  m.last = now; push(m, CONFIG.commentPush);
+  m.last = now; push(m, CONFIG.commentPush * audMul());
 }
 function onLike() {}
 function onGift({ user, nick, name, coins }) {

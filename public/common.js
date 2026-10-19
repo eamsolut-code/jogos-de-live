@@ -7,13 +7,6 @@ const DEMO = params.has('demo');
 try { if (params.get('user')) localStorage.setItem('jogosUser', params.get('user')); } catch (e) {}
 const LIVE_USER = params.get('user') || (() => { try { return localStorage.getItem('jogosUser') || ''; } catch (e) { return ''; } })();
 
-// Tela cheia: um toque esconde a barra do navegador (fica só o jogo na live).
-let fsTried = false;
-addEventListener('click', () => {
-  if (fsTried || params.has('semtelacheia')) return;
-  fsTried = true;
-  try { const el = document.documentElement; (el.requestFullscreen || el.webkitRequestFullscreen).call(el, { navigationUI: 'hide' }); } catch (e) {}
-});
 let scale = 1, offX = 0, offY = 0;
 // Parte visível do jogo (em unidades do jogo) quando a tela corta as laterais; usada pelos painéis.
 let VL = 8, VR = W - 8;
@@ -58,7 +51,7 @@ function goFullscreen() {
     else if (!document.fullscreenElement && el.webkitRequestFullscreen) el.webkitRequestFullscreen();
   } catch (e) {}
 }
-addEventListener('pointerdown', goFullscreen);
+if (!params.has('semtelacheia')) addEventListener('pointerdown', goFullscreen);
 
 // ---------- som ----------
 let ac = null;
@@ -73,6 +66,32 @@ function beep(freq, dur = 0.08, type = 'square', vol = 0.04, slide = 0) {
   } catch (e) {}
 }
 addEventListener('pointerdown', () => { try { ac = ac || new (window.AudioContext || window.webkitAudioContext)(); ac.resume(); } catch (e) {} }, { once: true });
+
+// ---------- audiência: quem comentou há pouco + mural de comentários ----------
+const AUD = { seen: new Map(), feed: [], chats: 0, gifts: 0 };
+function audActive() { const now = performance.now(); let n = 0; for (const [u, t] of AUD.seen) { if (now - t < 60000) n++; else AUD.seen.delete(u); } return n; }
+// Com poucas pessoas na live, cada comentário vale mais, para o jogo responder mesmo com 1 espectador.
+function audMul() { return clamp(20 / Math.max(1, audActive()), 1, 15); }
+function audNote(m, kind) {
+  AUD.seen.set(m.user, performance.now());
+  if (kind === 'chat') { AUD.chats++; AUD.feed.push({ t: performance.now(), s: `${String(m.nick || m.user).slice(0, 12)}: ${String(m.text || '').slice(0, 22)}` }); }
+  else { AUD.gifts++; AUD.feed.push({ t: performance.now(), s: `🎁 ${String(m.nick || m.user).slice(0, 10)}: ${m.name || 'presente'}`, gift: true }); }
+  if (AUD.feed.length > 4) AUD.feed.shift();
+}
+function drawFeed() {
+  const now = performance.now(); const x = VL + 4; let y = H - 132;
+  ctx.globalAlpha = 1;
+  for (let i = AUD.feed.length - 1; i >= 0; i--) {
+    const f = AUD.feed[i], age = (now - f.t) / 1000; if (age > 12) continue;
+    ctx.globalAlpha = Math.min(1, (12 - age) / 3);
+    ctx.font = '700 13px system-ui, sans-serif'; const w = Math.min(VR - x, ctx.measureText(f.s).width + 14);
+    rr(x, y - 11, w, 22, 11); ctx.fillStyle = f.gift ? '#a0207acc' : '#000000aa'; ctx.fill();
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#fff'; ctx.fillText(f.s, x + 7, y, w - 10);
+    y -= 26;
+  }
+  ctx.globalAlpha = 1;
+  txt(`${AUD.chats} comentários · ${audActive()} jogando`, VR - 4, H - 118, 12, '#ffffffcc', 'right', false);
+}
 
 // ---------- efeitos ----------
 const FX = { shake: 0, flash: 0, floaters: [], particles: [], banners: [] };
@@ -111,6 +130,7 @@ function endFrame() {
     ctx.globalAlpha = 1;
   });
   if (FX.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${FX.flash * 0.6})`; ctx.fillRect(0, 0, W, H); }
+  drawFeed();
   ctx.font = '700 15px system-ui, sans-serif';
   const tw = ctx.measureText(connState).width + 24, live = connState.startsWith('ao vivo');
   rr(W / 2 - tw / 2, H - 92, tw, 28, 14); ctx.fillStyle = live ? '#0a7a3aee' : '#000000bb'; ctx.fill();
@@ -182,9 +202,50 @@ function drawFruit(x, y, f, o = {}) {
   c.restore();
 }
 
+// ---------- robôs humanoides ----------
+const ROBOTS = [
+  { n: 'Azulão',  body: '#4da3ff', dark: '#1f64b8', eye: '#7dffea', ant: '#ff4d6d' },
+  { n: 'Ferrugem', body: '#d98a4a', dark: '#8f5426', eye: '#ffe14d', ant: '#7dffea' },
+  { n: 'Verdão',  body: '#4ddc7a', dark: '#1f8f4a', eye: '#fff', ant: '#ffe14d' },
+  { n: 'Rosinha', body: '#ff7ac0', dark: '#b8408a', eye: '#fff', ant: '#7dffea' },
+  { n: 'Cromo',   body: '#c9d3df', dark: '#7a8696', eye: '#4dd2ff', ant: '#ff4d6d' },
+  { n: 'Solar',   body: '#ffd24d', dark: '#b8901a', eye: '#ff4d6d', ant: '#4dd2ff' },
+  { n: 'Roxo',    body: '#a77bff', dark: '#5e3ab8', eye: '#ffe14d', ant: '#7dffea' },
+  { n: 'Vermelhão', body: '#ff5a5a', dark: '#a82a2a', eye: '#fff', ant: '#ffe14d' },
+];
+function robotFor(user) { return ROBOTS[hash(user) % ROBOTS.length]; }
+// (x, y) = centro do corpo. o: s escala, t tempo, walk, arm (braços pra cima), stun, sad, flip, look, bob
+function drawRobot(x, y, r, o = {}) {
+  const s = o.s || 1, t = o.t || 0, c = ctx;
+  c.save(); c.translate(x, y + (o.bob || 0) * s); c.scale(s * (o.flip ? -1 : 1), s);
+  const sw = o.walk ? Math.sin(t * 9) * 6 : 0;
+  c.lineCap = 'round'; c.strokeStyle = '#333'; c.lineWidth = 5;
+  c.beginPath(); c.moveTo(-7, 14); c.lineTo(-8 + sw, 29); c.moveTo(7, 14); c.lineTo(8 - sw, 29); c.stroke();
+  c.fillStyle = r.dark; c.fillRect(-14 + sw, 28, 12, 5); c.fillRect(2 - sw, 28, 12, 5);
+  const wv = Math.sin(t * 10) * 4; c.strokeStyle = r.dark; c.lineWidth = 5; c.beginPath();
+  if (o.arm) { c.moveTo(-14, 0); c.lineTo(-25, -18 + wv); c.moveTo(14, 0); c.lineTo(25, -18 - wv); }
+  else { const a = o.walk ? Math.sin(t * 9) * 6 : 0; c.moveTo(-14, 2); c.lineTo(-23, 13 - a); c.moveTo(14, 2); c.lineTo(23, 13 + a); }
+  c.stroke(); c.fillStyle = '#333'; c.beginPath();
+  if (o.arm) { c.arc(-25, -18 + wv, 3.5, 0, 7); c.arc(25, -18 - wv, 3.5, 0, 7); } else { c.arc(-23, 13, 3.5, 0, 7); c.arc(23, 13, 3.5, 0, 7); }
+  c.fill();
+  c.fillStyle = r.body; c.beginPath(); c.roundRect(-14, -8, 28, 26, 6); c.fill();
+  c.fillStyle = r.dark; c.beginPath(); c.roundRect(-8, 0, 16, 10, 3); c.fill();
+  c.fillStyle = r.eye; c.globalAlpha = 0.9; c.beginPath(); c.arc(-3, 5, 1.8, 0, 7); c.arc(3, 5, 1.8, 0, 7); c.fill(); c.globalAlpha = 1;
+  c.fillStyle = r.body; c.beginPath(); c.roundRect(-13, -30, 26, 22, 6); c.fill();
+  c.fillStyle = '#10142a'; c.beginPath(); c.roundRect(-10, -26, 20, 12, 5); c.fill();
+  const lk = (o.look || 0) * 1.5;
+  if (o.stun) { c.strokeStyle = r.eye; c.lineWidth = 2; for (const ex of [-4, 4]) { c.beginPath(); c.moveTo(ex - 2.5, -23); c.lineTo(ex + 2.5, -17); c.moveTo(ex + 2.5, -23); c.lineTo(ex - 2.5, -17); c.stroke(); } }
+  else { c.fillStyle = r.eye; c.beginPath(); c.arc(-4 + lk, -20, o.sad ? 2 : 2.8, 0, 7); c.arc(4 + lk, -20, o.sad ? 2 : 2.8, 0, 7); c.fill(); }
+  c.strokeStyle = '#333'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(0, -30); c.lineTo(0, -38); c.stroke();
+  c.fillStyle = r.ant; c.beginPath(); c.arc(0, -40, 3.5 + (Math.sin(t * 6) > 0.5 ? 1 : 0), 0, 7); c.fill();
+  c.restore();
+}
+
 // ---------- ligação com a live ----------
 let connState = DEMO ? 'modo demo' : 'conectando...';
 function startLive(o) {
+  const c0 = o.onChat, g0 = o.onGift;
+  o = { ...o, onChat: (m) => { audNote(m, 'chat'); c0 && c0(m); }, onGift: (m) => { audNote(m, 'gift'); g0 && g0(m); } };
   if (DEMO) buildDemo(o); else connectWS(o);
 }
 function connectWS(o) {

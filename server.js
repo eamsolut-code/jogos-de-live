@@ -14,16 +14,13 @@ const http = require('http');
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const { TikTokLiveConnection, WebcastEvent, ControlEvent } = require('tiktok-live-connector');
+const { mapChat, mapGift, mapLike } = require('./bridge');
 
 const PORT = process.env.PORT || 3000;
 const DEFAULT_USER = clean(process.argv[2] || process.env.TIKTOK_USER || '');
 const EULER_KEY = process.env.EULER_API_KEY || undefined;
 const ALLOWED = (process.env.ALLOWED_USERS || '').split(',').map(clean).filter(Boolean);
 const IDLE_CLOSE_MS = 60000;
-
-// A biblioteca entrega campos com nomes diferentes conforme a versão; aceitamos os dois formatos.
-const uidOf = (u) => String(u?.displayId || u?.uniqueId || u?.id || 'anon');
-const nickOf = (u) => String(u?.nickname || u?.displayId || u?.uniqueId || 'anon');
 
 function clean(u) { return String(u || '').replace(/^@/, '').trim().toLowerCase().replace(/[^a-z0-9._]/g, '').slice(0, 40); }
 
@@ -52,21 +49,18 @@ function startHub(hub) {
     conn.on(ControlEvent.DECODED_DATA, (event) => { hub.counts[event] = (hub.counts[event] || 0) + 1; });
 
     conn.on(WebcastEvent.CHAT, (d) => {
-      const text = String(d.content ?? d.comment ?? '');
-      if (!text) return;
-      console.log(`[@${hub.user}] comentário de ${uidOf(d.user)}: ${text.slice(0, 40)}`);
-      broadcast(hub, { t: 'chat', user: uidOf(d.user), nick: nickOf(d.user), text });
+      const m = mapChat(d); if (!m) return;
+      hub.chats = (hub.chats || 0) + 1;
+      console.log(`[@${hub.user}] comentário de ${m.user}: ${m.text.slice(0, 40)}`);
+      broadcast(hub, m);
     });
     conn.on(WebcastEvent.GIFT, (d) => {
-      // Presentes em sequência: só conta quando a sequência termina.
-      const type = d.gift?.type ?? d.giftDetails?.giftType;
-      if (type === 1 && !d.repeatEnd) return;
-      const unit = d.gift?.diamondCount ?? d.giftDetails?.diamondCount ?? 1, count = d.repeatCount || 1;
-      const name = d.gift?.name || d.giftDetails?.giftName || 'Presente';
-      console.log(`[@${hub.user}] presente de ${uidOf(d.user)}: ${name} x${count} (${unit * count} moedas)`);
-      broadcast(hub, { t: 'gift', user: uidOf(d.user), nick: nickOf(d.user), name, coins: unit * count, count });
+      const m = mapGift(d); if (!m) return;
+      hub.gifts = (hub.gifts || 0) + 1;
+      console.log(`[@${hub.user}] presente de ${m.user}: ${m.name} x${m.count} (${m.coins} moedas)`);
+      broadcast(hub, m);
     });
-    conn.on(WebcastEvent.LIKE, (d) => broadcast(hub, { t: 'like', user: uidOf(d.user), nick: nickOf(d.user), count: d.likeCount || d.count || 1 }));
+    conn.on(WebcastEvent.LIKE, (d) => broadcast(hub, mapLike(d)));
 
     let handled = false;
     const reconnect = (why) => {

@@ -62,13 +62,13 @@ function onChat({ user, nick }) {
   const h = getHero(user, nick), now = performance.now();
   if (h.stun > 0 || now - h.last < CONFIG.commentCooldownMs) return;
   h.last = now; h.atk = 0.3;
-  shots.push({ x: h.x, y: h.y - 20, user, nick, dmg: CONFIG.commentDamage, color: h.fruit.body, big: false });
+  shots.push({ x: h.x, y: h.y - 20, user, nick, dmg: CONFIG.commentDamage * audMul(), color: h.fruit.body, big: false });
   beep(520 + Math.random() * 200, 0.05, 'square', 0.02);
 }
 function onLike({ user, nick, count }) {
   if (!CONFIG.likeDamage) return;
   const h = getHero(user, nick); if (h.stun > 0) return;
-  addDamage(user, nick, CONFIG.likeDamage * Math.min(count, 15));
+  addDamage(user, nick, CONFIG.likeDamage * Math.min(count, 15) * audMul());
 }
 function onGift({ user, nick, name, coins }) {
   const h = getHero(user, nick); h.stun = 0; h.atk = 0.8;

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Naves Atari</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  lives: 3,
+  commentCooldownMs: 600,
+  maxPilots: 24,
+  baseStepSec: 0.8,         // tempo entre passos dos invasores (cresce quando há pouca gente)
+  loseY: 740,               // linha de perigo
+  restartAfterSec: 6,
+};
+// ======================================
+const ROWS_ART = [
+  ['..X.....X..', '...X...X...', '..XXXXXXX..', '.XX.XXX.XX.', 'XXXXXXXXXXX', 'X.XXXXXXX.X', 'X.X.....X.X', '...XX.XX...'],
+  ['..X.....X..', 'X..X...X..X', 'X.XXXXXXX.X', 'XXX.XXX.XXX', 'XXXXXXXXXXX', '.XXXXXXXXX.', '..X.....X..', '.X.......X.'],
+];
+const pilots = new Map(), bullets = [], inv = [], lasers = [];
+let wave = 1, lives = CONFIG.lives, dir = 1, stepT = 0, anim = 0, over = null, kills = new Map(), score = 0, best = 0;
+
+function spawnWave() {
+  inv.length = 0; dir = 1;
+  const cols = 6, rows = Math.min(2 + Math.floor(wave / 2), 5);
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) inv.push({ x: 60 + c * 66, y: 190 + r * 52, hp: 1 + Math.floor((wave - 1) / 3), hurt: 0, row: r });
+}
+spawnWave();
+
+function getPilot(user, nick) {
+  let p = pilots.get(user);
+  if (!p) {
+    if (pilots.size >= CONFIG.maxPilots) { let old = null; for (const q of pilots.values()) if (!old || q.last < old.last) old = q; pilots.delete(old.user); }
+    p = { user, nick, robot: robotFor(user), x: 30 + (hash(user) % (W - 60)), last: 0, t: rand(0, 6), cheer: 0 }; pilots.set(user, p);
+  }
+  p.nick = nick || p.nick; return p;
+}
+function shoot(p, n = 1, big = false) {
+  for (let i = 0; i < n; i++) bullets.push({ x: p.x + (i - (n - 1) / 2) * 12, y: 850, vx: (i - (n - 1) / 2) * 30, user: p.user, nick: p.nick, big, color: p.robot.body });
+}
+function hit(v, user, nick, dmg = 1) {
+  v.hp -= dmg; v.hurt = 0.12;
+  if (v.hp <= 0 && !v.dead) {
+    v.dead = true; score += 10; best = Math.max(best, score); burst(v.x, v.y, '#9dffb0', 12, 200); beep(200 + v.row * 60, 0.06, 'square', 0.03, -100);
+    const k = kills.get(user) || { nick, n: 0 }; k.n++; k.nick = nick; kills.set(user, k);
+  }
+}
+function onChat({ user, nick }) {
+  if (over) return;
+  const p = getPilot(user, nick), now = performance.now();
+  if (now - p.last < CONFIG.commentCooldownMs) return;
+  p.last = now; p.cheer = 0.3; shoot(p, 1 + Math.floor(audMul() / 5)); beep(700, 0.05, 'square', 0.02, -300);
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const p = getPilot(user, nick), tier = tierOf(coins); if (over) return;
+  addBanner(`${nick} mandou ${name}!`, ['TIRO TRIPLO!', 'RAJADA!', 'LASER!', 'BOMBA!', 'NUCLEAR!'][tier], tier);
+  p.cheer = 1.2;
+  if (tier === 0) shoot(p, 3, true);
+  else if (tier === 1) for (let i = 0; i < 6; i++) setTimeout(() => shoot(p, 3, true), i * 120);
+  else if (tier === 2) { lasers.push({ x: p.x, life: 1.2 }); inv.forEach((v) => { if (Math.abs(v.x - p.x) < 34) hit(v, user, nick, 3); }); FX.shake = 12; }
+  else if (tier === 3) { FX.flash = 0.7; FX.shake = 20; const rows = [...new Set(inv.filter((v) => !v.dead).map((v) => v.row))].sort().slice(-2); inv.forEach((v) => { if (rows.includes(v.row)) hit(v, user, nick, 5); }); }
+  else { FX.flash = 1; FX.shake = 28; inv.forEach((v) => hit(v, user, nick, 99)); }
+  beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+}
+
+function update(dt) {
+  for (const p of pilots.values()) { p.t += dt; p.cheer = Math.max(0, p.cheer - dt); }
+  if (over) { over.t -= dt; if (over.t <= 0) { over = null; wave = 1; lives = CONFIG.lives; score = 0; kills = new Map(); bullets.length = 0; spawnWave(); } return; }
+  anim += dt;
+  for (let i = lasers.length - 1; i >= 0; i--) { lasers[i].life -= dt; if (lasers[i].life <= 0) lasers.splice(i, 1); }
+  for (const v of inv) v.hurt = Math.max(0, v.hurt - dt);
+  stepT -= dt;
+  if (stepT <= 0) {
+    stepT = Math.max(0.35, CONFIG.baseStepSec + 0.25 * audMul() - wave * 0.04);
+    const alive = inv.filter((v) => !v.dead);
+    const edge = alive.some((v) => (dir > 0 && v.x > W - 40) || (dir < 0 && v.x < 40));
+    if (edge) { dir = -dir; alive.forEach((v) => { v.y += 26; }); } else alive.forEach((v) => { v.x += dir * 14; });
+    beep(110 + (Math.floor(anim * 2) % 4) * 20, 0.05, 'square', 0.03);
+  }
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i]; b.y -= 620 * dt; b.x += b.vx * dt;
+    let gone = b.y < 150;
+    for (const v of inv) if (!v.dead && Math.abs(v.x - b.x) < 22 && Math.abs(v.y - b.y) < 20) { hit(v, b.user, b.nick, b.big ? 2 : 1); gone = true; break; }
+    if (gone) bullets.splice(i, 1);
+  }
+  for (let i = inv.length - 1; i >= 0; i--) if (inv[i].dead) inv.splice(i, 1);
+  if (inv.some((v) => v.y > CONFIG.loseY)) {
+    lives--; FX.shake = 26; FX.flash = 0.6; beep(120, 0.5, 'sawtooth', 0.07, -60); spawnWaveKeep();
+    if (lives <= 0) over = { t: CONFIG.restartAfterSec, score, wave };
+  } else if (!inv.length) { wave++; score += 50; spawnWave(); floatText(W / 2, 400, `ONDA ${wave}!`, '#ffe14d', 40, 1.4); beep(600, 0.4, 'triangle', 0.06, 400); }
+}
+function spawnWaveKeep() { spawnWave(); }
+
+function sprite(art, x, y, px, color) {
+  ctx.fillStyle = color;
+  for (let r = 0; r < art.length; r++) for (let c = 0; c < art[r].length; c++) if (art[r][c] === 'X') ctx.fillRect(x + (c - art[r].length / 2) * px, y + (r - art.length / 2) * px, px, px);
+}
+function draw() {
+  beginFrame();
+  ctx.fillStyle = '#05070f'; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.fillStyle = '#ffffff55'; for (let i = 0; i < 50; i++) ctx.fillRect((i * 97) % W, ((i * 61 + anim * 12) % H), 2, 2);
+  ctx.strokeStyle = '#ff4d4d88'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(-20, CONFIG.loseY + 20); ctx.lineTo(W + 20, CONFIG.loseY + 20); ctx.stroke(); ctx.setLineDash([]);
+  const colors = ['#ff5a5a', '#ffd24d', '#4dd2ff', '#9dffb0', '#c06bff'];
+  for (const v of inv) sprite(ROWS_ART[Math.floor(anim * 2 + v.row) % 2], v.x, v.y, 4, v.hurt > 0 ? '#fff' : colors[v.row % 5]);
+  for (const l of lasers) { ctx.globalAlpha = Math.min(1, l.life); ctx.fillStyle = '#7dffea'; ctx.fillRect(l.x - 14, 140, 28, 710); ctx.globalAlpha = 1; }
+  for (const b of bullets) { ctx.fillStyle = b.big ? '#ffe14d' : '#fff'; ctx.fillRect(b.x - 2, b.y - 8, b.big ? 6 : 4, 16); }
+  [...pilots.values()].forEach((p, i) => {
+    const y = 880 + (i % 2) * 16;
+    ctx.fillStyle = p.robot.body; ctx.fillRect(p.x - 13, y - 2, 26, 8); ctx.fillRect(p.x - 4, y - 12, 8, 10);
+    drawRobot(p.x, y - 12, p.robot, { s: 0.36, t: p.t, arm: p.cheer > 0 });
+    txt(p.nick.slice(0, 7), p.x, y + 16, 9, '#cfe');
+  });
+  endFrame();
+  txt('NAVES ATARI', W / 2, 46, 32, '#9dffb0');
+  txt('COMENTE PARA ATIRAR  ·  PRESENTE = LASER E BOMBA', W / 2, 80, 14, '#fff6b0');
+  txt(`ONDA ${wave}   PONTOS ${score}   VIDAS ${'♥'.repeat(Math.max(0, lives))}`, W / 2, 112, 18, '#fff');
+  const top = [...kills.values()].sort((a, b) => b.n - a.n).slice(0, 4);
+  if (top.length) {
+    rr(VL, 140, 160, 28 + top.length * 22, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('ABATES', VL + 80, 154, 13, '#ffe14d', 'center', false);
+    top.forEach((k, i) => txt(`${i + 1}. ${k.nick.slice(0, 8)}  ${k.n}`, VL + 10, 176 + i * 22, 14, '#fff', 'left', false));
+  }
+  if (over) {
+    ctx.fillStyle = '#000c'; ctx.fillRect(0, 0, W, H);
+    txt('FIM DE JOGO', W / 2, 330, 46, '#ff6b6b');
+    txt(`Chegaram até a onda ${over.wave}  ·  ${over.score} pontos`, W / 2, 400, 22);
+    top.slice(0, 3).forEach((k, i) => txt(`${i + 1}º ${k.nick}  ${k.n} abates`, W / 2, 470 + i * 38, 24));
+    txt('Nova partida já já...', W / 2, 700, 18, '#ffe14d');
+  }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['fogo', 'atira', 'pew', 'bora'] });
+runGame(update, draw);
+</script></body></html>

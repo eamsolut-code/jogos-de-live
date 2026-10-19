@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Travessia a Vela</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  commentImpulse: 0.0024,   // empurrão de cada comentário no vento
+  commentCooldownMs: 500,
+  baseDrift: 0.002,         // a maré sempre empurra um pouquinho
+  maxSpeed: 0.025,          // fração do trajeto por segundo
+  drag: 0.8,
+  stormEverySec: [25, 45],  // de quanto em quanto tempo vem temporal
+  stormSec: 7,
+  restartAfterSec: 8,
+  maxCrew: 30,
+};
+// Ubatuba -> Caraguatatuba -> São Sebastião -> Ilhabela
+const PORTS = [
+  { name: 'UBATUBA', x: 150, y: 830 }, { name: 'CARAGUATATUBA', x: 175, y: 625 },
+  { name: 'SÃO SEBASTIÃO', x: 235, y: 430 }, { name: 'ILHABELA', x: 405, y: 255 },
+];
+// ======================================
+const crew = new Map(), pushers = new Map();
+let q = 0, v = 0, wind = 0, storm = 0, nextStorm = rand(...CONFIG.stormEverySec), reached = 0, win = null, endT = 0, T = 0, wins = 0, trips = 1;
+const segLen = []; let total = 0;
+for (let i = 1; i < PORTS.length; i++) { const l = Math.hypot(PORTS[i].x - PORTS[i - 1].x, PORTS[i].y - PORTS[i - 1].y); segLen.push(l); total += l; }
+function posAt(p) {
+  let d = clamp(p, 0, 1) * total;
+  for (let i = 0; i < segLen.length; i++) { if (d <= segLen[i] || i === segLen.length - 1) { const f = clamp(d / segLen[i], 0, 1), a = PORTS[i], b = PORTS[i + 1]; return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f, ang: Math.atan2(b.y - a.y, b.x - a.x) }; } d -= segLen[i]; }
+}
+function portQ(i) { let d = 0; for (let k = 0; k < i; k++) d += segLen[k]; return d / total; }
+
+function getCrew(user, nick) {
+  let c = crew.get(user);
+  if (!c) {
+    if (crew.size >= CONFIG.maxCrew) { let old = null; for (const x of crew.values()) if (!old || x.last < old.last) old = x; crew.delete(old.user); }
+    c = { user, nick, robot: robotFor(user), x: 20 + (hash(user) % 200), y: 880 + (hash(user + 'y') % 60), last: 0, t: rand(0, 6), cheer: 0 }; crew.set(user, c);
+  }
+  c.nick = nick || c.nick; return c;
+}
+function boost(user, nick, amt) {
+  if (win) return;
+  v = Math.min(CONFIG.maxSpeed, v + amt * (storm > 0 ? 0.6 : 1));
+  const p = pushers.get(user) || { nick, n: 0 }; p.n += amt; p.nick = nick; pushers.set(user, p);
+}
+function onChat({ user, nick }) {
+  const c = getCrew(user, nick), now = performance.now(); if (now - c.last < CONFIG.commentCooldownMs) return;
+  c.last = now; c.cheer = 0.4; wind = 1; boost(user, nick, CONFIG.commentImpulse * audMul());
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const c = getCrew(user, nick), tier = tierOf(coins); c.cheer = 1.4;
+  if (win) return;
+  addBanner(`${nick} mandou ${name}!`, ['VENTO A FAVOR!', 'GOLFINHOS AJUDAM!', 'MOTOR LIGADO!', 'TURBO DO CAPITÃO!', 'TELEPORTE ATÉ O PRÓXIMO PORTO!'][tier], tier);
+  if (tier === 0) { v = Math.min(CONFIG.maxSpeed * 1.5, v + 0.012); }
+  else if (tier === 1) q = Math.min(0.999, q + 0.05);
+  else if (tier === 2) { q = Math.min(0.999, q + 0.12); storm = 0; }
+  else if (tier === 3) { q = Math.min(0.999, q + 0.25); storm = 0; }
+  else { const next = PORTS.map((_, i) => portQ(i)).find((x) => x > q + 0.001); q = Math.min(0.999, next ?? 0.999); storm = 0; }
+  const p = pushers.get(user) || { nick, n: 0 }; p.n += coins / 100; p.nick = nick; pushers.set(user, p);
+  FX.shake = 6 + tier * 4; beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+}
+function checkPorts() {
+  for (let i = reached + 1; i < PORTS.length; i++) {
+    if (q >= portQ(i) - 0.002) {
+      reached = i; burst(PORTS[i].x, PORTS[i].y, '#ffe14d', 40, 300); beep(500 + i * 80, 0.4, 'triangle', 0.07, 300);
+      if (i === PORTS.length - 1) { win = { top: [...pushers.values()].sort((a, b) => b.n - a.n).slice(0, 3) }; endT = CONFIG.restartAfterSec; wins++; FX.flash = 0.8; FX.shake = 20; burst(W / 2, 300, '#ffd24d', 90, 450); }
+      else { FX.flash = 0.3; addBanner(`Chegamos em ${PORTS[i].name}!`, i === 1 ? 'Rumo a São Sebastião' : 'Falta só a travessia até Ilhabela!', 1); }
+    }
+  }
+}
+function update(dt) {
+  T += dt; wind = Math.max(0, wind - dt * 2);
+  for (const c of crew.values()) { c.t += dt; c.cheer = Math.max(0, c.cheer - dt); }
+  if (win) { endT -= dt; if (endT <= 0) { win = null; q = 0; v = 0; reached = 0; trips++; pushers.clear(); storm = 0; nextStorm = rand(...CONFIG.stormEverySec); } return; }
+  nextStorm -= dt; if (nextStorm <= 0) { storm = CONFIG.stormSec; nextStorm = rand(...CONFIG.stormEverySec); addBanner('TEMPORAL!', 'Comentem mais pra aguentar!', 3); beep(100, 0.6, 'sawtooth', 0.07, -40); }
+  if (storm > 0) storm -= dt;
+  v = Math.max(0, v - v * CONFIG.drag * (storm > 0 ? 2 : 1) * dt);
+  q += (v + (storm > 0 ? 0 : CONFIG.baseDrift)) * dt; if (storm > 0) q = Math.max(0, q - 0.0015 * dt * 60 * 0.15);
+  q = clamp(q, 0, 1); checkPorts();
+}
+function drawBoat(x, y, ang) {
+  const rock = Math.sin(T * 2) * 0.08 + (storm > 0 ? Math.sin(T * 9) * 0.1 : 0);
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rock);
+  ctx.fillStyle = '#ffffff55'; ctx.beginPath(); ctx.ellipse(0, 22, 46, 8, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#7a3f1a'; ctx.beginPath(); ctx.moveTo(-40, 6); ctx.lineTo(40, 6); ctx.lineTo(28, 24); ctx.lineTo(-28, 24); ctx.fill();
+  ctx.strokeStyle = '#4a2810'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, 6); ctx.lineTo(0, -80); ctx.stroke();
+  const bl = 6 + wind * 10 + Math.sin(T * 3) * 2;
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.moveTo(4, -76); ctx.quadraticCurveTo(34 + bl, -34, 30, 0); ctx.lineTo(4, 0); ctx.fill();
+  ctx.fillStyle = '#ff6a3a'; ctx.beginPath(); ctx.moveTo(-4, -70); ctx.lineTo(-30, -10); ctx.lineTo(-4, -10); ctx.fill();
+  drawRobot(-14, -18, ROBOTS[5], { s: 0.7, t: T, arm: wind > 0.1, bob: 0 });
+  ctx.restore();
+}
+function draw() {
+  beginFrame();
+  const g = ctx.createLinearGradient(0, 0, W, H); g.addColorStop(0, storm > 0 ? '#1a3050' : '#2aa6d8'); g.addColorStop(1, storm > 0 ? '#0a1a30' : '#0a5a9a');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.strokeStyle = '#ffffff25'; ctx.lineWidth = 2;
+  for (let i = 0; i < 14; i++) { const y = ((i * 75 + T * 25) % (H + 60)) - 30; ctx.beginPath(); for (let x = 200; x <= W + 10; x += 18) ctx.lineTo(x, y + Math.sin(x * 0.06 + T * 2 + i) * 5); ctx.stroke(); }
+  // costa (Ubatuba, Caraguatatuba, São Sebastião)
+  ctx.fillStyle = '#3f9a4a'; ctx.beginPath(); ctx.moveTo(-20, 960); ctx.lineTo(-20, 150); ctx.lineTo(120, 170); ctx.quadraticCurveTo(150, 300, 190, 380); ctx.quadraticCurveTo(160, 520, 120, 600); ctx.quadraticCurveTo(110, 720, 70, 790); ctx.quadraticCurveTo(100, 880, 110, 960); ctx.fill();
+  ctx.fillStyle = '#f2d99b'; ctx.lineWidth = 6; ctx.strokeStyle = '#f2d99b'; ctx.stroke();
+  ctx.fillStyle = '#2a7a38'; ctx.beginPath(); ctx.moveTo(-20, 150); ctx.lineTo(60, 160); ctx.lineTo(40, 500); ctx.lineTo(-20, 600); ctx.fill();
+  // Ilhabela
+  ctx.fillStyle = '#f2d99b'; ctx.beginPath(); ctx.ellipse(440, 270, 105, 130, 0.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#2f8a3f'; ctx.beginPath(); ctx.ellipse(445, 265, 92, 116, 0.5, 0, 7); ctx.fill();
+  ctx.fillStyle = '#1f6a30'; ctx.beginPath(); ctx.moveTo(430, 170); ctx.lineTo(480, 270); ctx.lineTo(385, 270); ctx.fill();
+  // trajeto
+  ctx.setLineDash([10, 10]); ctx.strokeStyle = '#ffffff88'; ctx.lineWidth = 3; ctx.beginPath(); PORTS.forEach((p, i) => (i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke(); ctx.setLineDash([]);
+  PORTS.forEach((p, i) => {
+    ctx.fillStyle = i <= reached ? '#ffe14d' : '#fff'; ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 7); ctx.fill(); ctx.strokeStyle = '#000a'; ctx.lineWidth = 3; ctx.stroke();
+    txt(p.name, i === 3 ? p.x - 20 : p.x + 20, p.y - 24, 14, '#fff', i === 3 ? 'center' : 'left');
+  });
+  // torcida na praia
+  [...crew.values()].forEach((c) => { drawRobot(c.x, c.y, c.robot, { s: 0.42, t: c.t, arm: c.cheer > 0 }); txt(c.nick.slice(0, 7), c.x, c.y + 18, 9, '#fff'); });
+  const b = posAt(q); drawBoat(b.x + 40, b.y, b.ang);
+  if (storm > 0) {
+    ctx.fillStyle = '#00102080'; ctx.fillRect(-20, -20, W + 40, H + 40); ctx.strokeStyle = '#cfe8ff88'; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 60; i++) { const x = (i * 83 + T * 200) % (W + 40), y = (i * 131 + T * 700) % H; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - 6, y + 18); ctx.stroke(); }
+    if (Math.random() < 0.04) FX.flash = 0.5;
+  }
+  endFrame();
+  txt('TRAVESSIA A VELA', W / 2, 46, 32);
+  txt('COMENTE PARA SOPRAR O VENTO  ·  PRESENTE = IMPULSO', W / 2, 80, 14, '#fff6b0');
+  txt(`${PORTS[Math.min(reached + 1, 3)].name} ${Math.round(q * 100)}%  ·  viagem #${trips}`, W / 2, 110, 18, '#fff');
+  if (storm > 0) txt(`TEMPORAL! ${Math.ceil(storm)}s`, W / 2, 150, 30, '#ff6b6b');
+  const top = [...pushers.values()].sort((a, b2) => b2.n - a.n).slice(0, 3);
+  if (top.length) {
+    rr(VR - 170, 140, 170, 28 + top.length * 22, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('NO LEME', VR - 85, 154, 13, '#ffe14d', 'center', false);
+    top.forEach((k, i) => txt(`${i + 1}. ${k.nick.slice(0, 8)}`, VR - 160, 176 + i * 22, 14, '#fff', 'left', false));
+  }
+  if (win) {
+    ctx.fillStyle = '#000b'; ctx.fillRect(0, 0, W, H);
+    txt('CHEGAMOS EM ILHABELA!', W / 2, 320, 36, '#ffe14d');
+    drawRobot(W / 2, 430, ROBOTS[5], { s: 2.6, t: T, arm: true });
+    txt('Tripulação campeã', W / 2, 540, 20);
+    win.top.forEach((k, i) => txt(`${i + 1}º ${k.nick}`, W / 2, 590 + i * 38, 24));
+    txt('Nova travessia já já...', W / 2, 760, 18, '#ffe14d');
+  }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['vento', 'vai', 'sopra', 'bora'] });
+runGame(update, draw);
+</script></body></html>

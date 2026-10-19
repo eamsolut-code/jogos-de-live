@@ -32,7 +32,7 @@ const standings = () => [...racers.values()].sort((a, b) => b.p - a.p);
 function onChat({ user, nick }) {
   const r = getRacer(user, nick), now = performance.now();
   if (winner || now - r.last < CONFIG.commentCooldownMs) return;
-  r.last = now; if (r.stun <= 0) r.p += CONFIG.commentBoost;
+  r.last = now; if (r.stun <= 0) r.p += CONFIG.commentBoost * audMul();
   floatText(r.x, yOf(r) - 40, '+', '#9dffb0', 16, 0.4);
 }
 function onLike() {}

@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Pênalti dos Robôs</title></head>
+<body><canvas id="c"></canvas>
+<script src="common.js"></script>
+<script>
+// ============ CONFIGURAÇÃO ============
+const CONFIG = {
+  voteSec: 9,              // tempo para votar a cada cobrança
+  kickSec: 1.3, resultSec: 2.6,
+  keeperSmart: 0.35,       // chance do goleiro "adivinhar" o lado mais votado
+  maxVoters: 40,
+};
+// ======================================
+const GX = [130, 270, 410], DIRS = ['ESQUERDA', 'MEIO', 'DIREITA'];
+const voters = new Map(), scorers = new Map();
+let phase = 'vote', t = CONFIG.voteSec, shotDir = 1, keeperDir = 1, goal = null, goals = 0, saves = 0, round = 1;
+let effect = { sleep: false, gold: false, freeze: false }, ballT = 0, T = 0;
+
+function dirFromText(text) {
+  const s = (text || '').toLowerCase();
+  if (s.includes('esq') || /(^|\D)1(\D|$)/.test(s)) return 0;
+  if (s.includes('meio') || s.includes('cent') || /(^|\D)2(\D|$)/.test(s)) return 1;
+  if (s.includes('dir') || /(^|\D)3(\D|$)/.test(s)) return 2;
+  return Math.floor(Math.random() * 3);
+}
+function getVoter(user, nick) {
+  let v = voters.get(user);
+  if (!v) {
+    if (voters.size >= CONFIG.maxVoters) { let old = null; for (const q of voters.values()) if (!old || q.last < old.last) old = q; voters.delete(old.user); }
+    v = { user, nick, robot: robotFor(user), dir: -1, w: 1, last: 0, x: 24 + Math.random() * (W - 48), y: 820 + Math.random() * 100, t: Math.random() * 6, cheer: 0 }; voters.set(user, v);
+  }
+  v.nick = nick || v.nick; return v;
+}
+function tally() { const c = [0, 0, 0]; for (const v of voters.values()) if (v.dir >= 0) c[v.dir] += v.w; return c; }
+function onChat({ user, nick, text }) {
+  const v = getVoter(user, nick); v.last = performance.now(); v.cheer = 0.5;
+  if (phase !== 'vote') return;
+  v.dir = dirFromText(text); v.w = 1; beep(500 + v.dir * 120, 0.05, 'square', 0.02);
+}
+function onLike() {}
+function onGift({ user, nick, name, coins }) {
+  const v = getVoter(user, nick), tier = tierOf(coins);
+  addBanner(`${nick} mandou ${name}!`, ['VOTO TRIPLO!', 'VOTO x8!', 'GOLEIRO DORMIU!', 'GOLEIRO DORMIU + GOL DE OURO!', 'GOL DE OURO x10!'][tier], tier);
+  v.cheer = 1.2; v.w = [3, 8, 8, 8, 8][tier]; if (v.dir < 0) v.dir = Math.floor(Math.random() * 3);
+  if (tier >= 2) effect.sleep = true;
+  if (tier >= 3) effect.gold = true;
+  if (tier >= 4) effect.gold = 10;
+  FX.shake = 6 + tier * 4; beep(300 + tier * 140, 0.25, 'sawtooth', 0.05, 400);
+}
+function startKick() {
+  const c = tally(), mx = Math.max(...c);
+  shotDir = mx > 0 ? pick([0, 1, 2].filter((i) => c[i] === mx)) : Math.floor(Math.random() * 3);
+  keeperDir = effect.sleep ? 1 : Math.random() < CONFIG.keeperSmart ? shotDir : Math.floor(Math.random() * 3);
+  goal = effect.sleep ? true : keeperDir !== shotDir;
+  phase = 'kick'; t = CONFIG.kickSec; ballT = 0; beep(180, 0.15, 'triangle', 0.08, 200);
+}
+function endKick() {
+  phase = 'result'; t = CONFIG.resultSec;
+  const pts = effect.gold ? (effect.gold === 10 ? 10 : 5) : 1;
+  if (goal) {
+    goals += pts; FX.shake = 18; FX.flash = 0.5; burst(GX[shotDir], 270, '#ffd24d', 50, 380); beep(520, 0.5, 'triangle', 0.07, 400);
+    for (const v of voters.values()) if (v.dir === shotDir) { const s = scorers.get(v.user) || { nick: v.nick, n: 0 }; s.n += pts; s.nick = v.nick; scorers.set(v.user, s); v.cheer = 1.5; }
+  } else { saves++; FX.shake = 10; beep(150, 0.4, 'sawtooth', 0.07, -60); burst(GX[keeperDir], 280, '#fff', 20, 200); }
+  goal = { in: !!goal, pts };
+}
+function update(dt) {
+  T += dt;
+  for (const v of voters.values()) { v.t += dt; v.cheer = Math.max(0, v.cheer - dt); }
+  t -= dt;
+  if (phase === 'vote' && t <= 0) startKick();
+  else if (phase === 'kick') { ballT = 1 - t / CONFIG.kickSec; if (t <= 0) endKick(); }
+  else if (phase === 'result' && t <= 0) { phase = 'vote'; t = CONFIG.voteSec; round++; effect = { sleep: false, gold: false }; goal = null; for (const v of voters.values()) { v.dir = -1; v.w = 1; } }
+}
+function draw() {
+  beginFrame();
+  const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, '#1a6a3a'); g.addColorStop(1, '#0f4a2a');
+  ctx.fillStyle = g; ctx.fillRect(-20, -20, W + 40, H + 40);
+  for (let i = 0; i < 8; i++) { ctx.fillStyle = i % 2 ? '#ffffff0c' : '#00000010'; ctx.fillRect(-20, 140 + i * 100, W + 40, 100); }
+  ctx.strokeStyle = '#ffffffaa'; ctx.lineWidth = 4; ctx.strokeRect(60, 520, W - 120, 300); ctx.beginPath(); ctx.arc(W / 2, 760, 5, 0, 7); ctx.stroke();
+  // trave e rede
+  ctx.fillStyle = '#ffffff18'; ctx.fillRect(40, 190, W - 80, 150);
+  ctx.strokeStyle = '#ffffff30'; ctx.lineWidth = 1; for (let x = 40; x <= W - 40; x += 20) { ctx.beginPath(); ctx.moveTo(x, 190); ctx.lineTo(x, 340); ctx.stroke(); } for (let y = 190; y <= 340; y += 20) { ctx.beginPath(); ctx.moveTo(40, y); ctx.lineTo(W - 40, y); ctx.stroke(); }
+  ctx.strokeStyle = '#fff'; ctx.lineWidth = 8; ctx.beginPath(); ctx.moveTo(40, 342); ctx.lineTo(40, 190); ctx.lineTo(W - 40, 190); ctx.lineTo(W - 40, 342); ctx.stroke();
+  // goleiro
+  const kd = (phase === 'kick' || phase === 'result') ? keeperDir : 1, kp = phase === 'kick' ? Math.min(1, ballT * 1.6) : phase === 'result' ? 1 : 0;
+  const kx = GX[1] + (GX[kd] - GX[1]) * kp, ky = 300 - Math.sin(kp * Math.PI) * 18;
+  drawRobot(kx, ky, { n: 'g', body: '#ff9a2e', dark: '#a8601a', eye: '#fff', ant: '#fff' }, { s: 1.6, t: T, arm: true, stun: effect.sleep && phase !== 'vote' ? true : effect.sleep });
+  if (effect.sleep) txt('Zzz', kx + 40, ky - 70, 26, '#cfe');
+  // chutador e bola
+  drawRobot(W / 2 - 50, 790, ROBOTS[4], { s: 1.7, t: T, arm: phase === 'result' && goal && goal.in });
+  let bx = W / 2, by = 770;
+  if (phase === 'kick' || phase === 'result') { const e = phase === 'result' ? 1 : ballT; bx = W / 2 + (GX[shotDir] - W / 2) * e; by = 770 + (265 - 770) * e - Math.sin(e * Math.PI) * 40; }
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(bx, by, 16 - (phase === 'vote' ? 0 : by < 600 ? 5 : 0), 0, 7); ctx.fill(); ctx.strokeStyle = '#222'; ctx.lineWidth = 2; ctx.stroke();
+  // torcida (quem comentou)
+  [...voters.values()].forEach((v) => { drawRobot(v.x, v.y, v.robot, { s: 0.42, t: v.t, arm: v.cheer > 0 }); txt(v.nick.slice(0, 7), v.x, v.y + 18, 9, '#fff'); });
+  endFrame();
+  txt('PÊNALTI DOS ROBÔS', W / 2, 46, 32);
+  txt('DIGITE 1 ESQUERDA · 2 MEIO · 3 DIREITA', W / 2, 80, 14, '#fff6b0');
+  txt(`TORCIDA ${goals}  x  ${saves} GOLEIRO`, W / 2, 112, 22, '#ffe14d');
+  if (phase === 'vote') {
+    const c = tally(), tot = Math.max(1, c[0] + c[1] + c[2]);
+    for (let i = 0; i < 3; i++) {
+      const w = 130, x = GX[i] - w / 2, h = 8 + (c[i] / tot) * 70;
+      ctx.fillStyle = '#ffd24dcc'; ctx.fillRect(x, 500 - h, w, h);
+      txt(`${i + 1}`, GX[i], 515, 22, '#fff'); txt(DIRS[i], GX[i], 485 - h, 13, '#fff');
+    }
+    txt(`Chute em ${Math.ceil(Math.max(0, t))}s`, W / 2, 440, 30, '#fff');
+  }
+  if (phase === 'result' && goal) txt(goal.in ? (goal.pts > 1 ? `GOL DE OURO! +${goal.pts}` : 'GOOOL!') : 'DEFENDEU!', W / 2, 440, 52, goal.in ? '#ffe14d' : '#ff6b6b');
+  const top = [...scorers.values()].sort((a, b) => b.n - a.n).slice(0, 3);
+  if (top.length) {
+    rr(VL, 140, 170, 28 + top.length * 22, 12); ctx.fillStyle = '#0008'; ctx.fill();
+    txt('ARTILHEIROS', VL + 85, 154, 13, '#ffe14d', 'center', false);
+    top.forEach((k, i) => txt(`${i + 1}. ${k.nick.slice(0, 8)}  ${k.n}`, VL + 10, 176 + i * 22, 14, '#fff', 'left', false));
+  }
+}
+startLive({ onChat, onGift, onLike, demoTexts: ['1', '2', '3', 'esquerda', 'direita', 'meio'] });
+runGame(update, draw);
+</script></body></html>
