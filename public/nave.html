@@ -11,7 +11,7 @@ const CONFIG = {
   commentCooldownMs: 600,
   maxPilots: 24,
   baseStepSec: 0.8,         // tempo entre passos dos invasores (cresce quando há pouca gente)
-  loseY: 740,               // linha de perigo
+  loseY: 690,               // linha de perigo
   restartAfterSec: 6,
 };
 // ======================================
@@ -25,7 +25,7 @@ let wave = 1, lives = CONFIG.lives, dir = 1, stepT = 0, anim = 0, over = null, k
 function spawnWave() {
   inv.length = 0; dir = 1;
   const cols = 6, rows = Math.min(2 + Math.floor(wave / 2), 5);
-  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) inv.push({ x: 60 + c * 66, y: 190 + r * 52, hp: 1 + Math.floor((wave - 1) / 3), hurt: 0, row: r });
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) inv.push({ x: 105 + c * 60, y: 200 + r * 56, hp: 1 + Math.floor((wave - 1) / 3), hurt: 0, row: r });
 }
 spawnWave();
 
@@ -38,7 +38,7 @@ function getPilot(user, nick) {
   p.nick = nick || p.nick; return p;
 }
 function shoot(p, n = 1, big = false) {
-  for (let i = 0; i < n; i++) bullets.push({ x: p.x + (i - (n - 1) / 2) * 12, y: 850, vx: (i - (n - 1) / 2) * 30, user: p.user, nick: p.nick, big, color: p.robot.body });
+  for (let i = 0; i < n; i++) bullets.push({ x: p.x + (i - (n - 1) / 2) * 12, y: 770, vx: (i - (n - 1) / 2) * 30, user: p.user, nick: p.nick, big, color: p.robot.body });
 }
 function hit(v, user, nick, dmg = 1) {
   v.hp -= dmg; v.hurt = 0.12;
@@ -76,7 +76,7 @@ function update(dt) {
   if (stepT <= 0) {
     stepT = Math.max(0.35, CONFIG.baseStepSec + 0.25 * audMul() - wave * 0.04);
     const alive = inv.filter((v) => !v.dead);
-    const edge = alive.some((v) => (dir > 0 && v.x > W - 40) || (dir < 0 && v.x < 40));
+    const edge = alive.some((v) => (dir > 0 && v.x > W - 80) || (dir < 0 && v.x < 80));
     if (edge) { dir = -dir; alive.forEach((v) => { v.y += 26; }); } else alive.forEach((v) => { v.x += dir * 14; });
     beep(110 + (Math.floor(anim * 2) % 4) * 20, 0.05, 'square', 0.03);
   }
@@ -100,15 +100,16 @@ function sprite(art, x, y, px, color) {
 }
 function draw() {
   beginFrame();
-  ctx.fillStyle = '#05070f'; ctx.fillRect(-20, -20, W + 40, H + 40);
-  ctx.fillStyle = '#ffffff55'; for (let i = 0; i < 50; i++) ctx.fillRect((i * 97) % W, ((i * 61 + anim * 12) % H), 2, 2);
-  ctx.strokeStyle = '#ff4d4d88'; ctx.lineWidth = 2; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(-20, CONFIG.loseY + 20); ctx.lineTo(W + 20, CONFIG.loseY + 20); ctx.stroke(); ctx.setLineDash([]);
+  const bg = ctx.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, '#1a1050'); bg.addColorStop(0.6, '#0b1a4a'); bg.addColorStop(1, '#0a3a5a'); ctx.fillStyle = bg; ctx.fillRect(-20, -20, W + 40, H + 40);
+  ctx.fillStyle = '#ffffff10'; for (let y = 0; y < H; y += 6) ctx.fillRect(0, y, W, 2);
+  ctx.fillStyle = '#ffffffaa'; for (let i = 0; i < 60; i++) ctx.fillRect((i * 97) % W, ((i * 61 + anim * 12) % H), 2, 2);
+  ctx.strokeStyle = '#ff4d4dcc'; ctx.lineWidth = 3; ctx.setLineDash([8, 8]); ctx.beginPath(); ctx.moveTo(-20, CONFIG.loseY + 20); ctx.lineTo(W + 20, CONFIG.loseY + 20); ctx.stroke(); ctx.setLineDash([]);
   const colors = ['#ff5a5a', '#ffd24d', '#4dd2ff', '#9dffb0', '#c06bff'];
-  for (const v of inv) sprite(ROWS_ART[Math.floor(anim * 2 + v.row) % 2], v.x, v.y, 4, v.hurt > 0 ? '#fff' : colors[v.row % 5]);
-  for (const l of lasers) { ctx.globalAlpha = Math.min(1, l.life); ctx.fillStyle = '#7dffea'; ctx.fillRect(l.x - 14, 140, 28, 710); ctx.globalAlpha = 1; }
-  for (const b of bullets) { ctx.fillStyle = b.big ? '#ffe14d' : '#fff'; ctx.fillRect(b.x - 2, b.y - 8, b.big ? 6 : 4, 16); }
+  for (const v of inv) sprite(ROWS_ART[Math.floor(anim * 2 + v.row) % 2], v.x, v.y, 5, v.hurt > 0 ? '#fff' : colors[v.row % 5]);
+  for (const l of lasers) { ctx.globalAlpha = Math.min(1, l.life); ctx.fillStyle = '#7dffea'; ctx.fillRect(l.x - 14, 140, 28, 640); ctx.globalAlpha = 1; }
+  for (const b of bullets) { ctx.fillStyle = b.big ? '#ffe14d' : '#7dffea'; ctx.fillRect(b.x - 3, b.y - 10, b.big ? 8 : 6, 20); }
   [...pilots.values()].forEach((p, i) => {
-    const y = 880 + (i % 2) * 16;
+    const y = 790 + (i % 2) * 18;
     ctx.fillStyle = p.robot.body; ctx.fillRect(p.x - 13, y - 2, 26, 8); ctx.fillRect(p.x - 4, y - 12, 8, 10);
     drawRobot(p.x, y - 12, p.robot, { s: 0.36, t: p.t, arm: p.cheer > 0 });
     txt(p.nick.slice(0, 7), p.x, y + 16, 9, '#cfe');
